@@ -1,0 +1,217 @@
+/* ============ 基础重置 ============ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    'PingFang SC',
+    'Hiragino Sans GB',
+    'Microsoft YaHei',
+    'Noto Sans SC',
+    sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+ul {
+  list-style: none;
+}
+
+/* ============ 主题变量 ============ */
+:root {
+  --radius: 12px;
+  --radius-sm: 8px;
+  --accent: #4f7cff;
+  --accent-2: #9b5cff;
+  --gradient: linear-gradient(135deg, #4f7cff, #9b5cff);
+  --sidebar-w: 232px;
+}
+
+html[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f4f6fb;
+  --bg-soft: #eef1f8;
+  --surface: #ffffff;
+  --surface-hover: #f7f9ff;
+  --border: #e5e9f2;
+  --text: #242a38;
+  --text-2: #5b6478;
+  --text-3: #9099ad;
+  --shadow: 0 1px 2px rgb(20 30 60 / 0.04), 0 6px 20px rgb(20 30 60 / 0.06);
+  --shadow-hover: 0 4px 10px rgb(30 50 100 / 0.08), 0 14px 34px rgb(30 50 100 / 0.12);
+  --mask: rgb(15 22 40 / 0.45);
+  --danger: #e5484d;
+  --ok: #2fa96e;
+}
+
+html[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0e131f;
+  --bg-soft: #131927;
+  --surface: #1a2130;
+  --surface-hover: #212a3d;
+  --border: #273145;
+  --text: #e7ebf4;
+  --text-2: #a7b0c3;
+  --text-3: #6b7488;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.35);
+  --shadow-hover: 0 4px 12px rgb(0 0 0 / 0.4), 0 16px 40px rgb(0 0 0 / 0.5);
+  --mask: rgb(0 0 0 / 0.6);
+  --danger: #ff6369;
+  --ok: #4cc38a;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  transition: background 0.25s, color 0.25s;
+}
+
+/* ============ 通用元素 ============ */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.icon-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.15s, box-shadow 0.15s, transform 0.1s;
+  white-space: nowrap;
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn-primary {
+  background: var(--gradient);
+  color: #fff;
+  box-shadow: 0 4px 14px rgb(79 124 255 / 0.35);
+}
+
+.btn-primary:hover {
+  box-shadow: 0 6px 18px rgb(79 124 255 / 0.45);
+}
+
+.btn-ghost {
+  background: var(--surface-hover);
+  color: var(--text-2);
+}
+
+.btn-ghost:hover {
+  color: var(--text);
+}
+
+.btn-danger {
+  background: transparent;
+  color: var(--danger);
+}
+
+.btn-danger:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.btn-danger-solid {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-3);
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 过渡动画 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.pop-enter-active {
+  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+.pop-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.pop-enter-from,
+.pop-leave-to {
+  opacity: 0;
+  transform: scale(0.95) translateY(8px);
+}

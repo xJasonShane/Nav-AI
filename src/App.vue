@@ -89,11 +89,22 @@ function deleteSite(site) {
   if (confirm(`确定删除站点「${site.name}」？`)) removeSite(site.id)
 }
 
-/** "/" 快捷键聚焦搜索框 */
+/** "/" 聚焦搜索框；Esc 清空搜索（对齐使用文档） */
 function onKey(e) {
   if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(e.target.tagName) && !e.target.isContentEditable) {
     e.preventDefault()
     document.querySelector('.search input')?.focus()
+    return
+  }
+  if (
+    e.key === 'Escape' &&
+    query.value &&
+    !sidebarOpen.value &&
+    !siteModal.value &&
+    !showCategoryModal.value &&
+    !showDataModal.value
+  ) {
+    query.value = ''
   }
 }
 
@@ -131,27 +142,33 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
     <main class="main">
       <!-- 空状态 -->
       <div v-if="isEmpty" class="empty-state">
-        <div class="empty-logo">🧭</div>
-        <h2>欢迎使用 Nav-AI</h2>
-        <p>这是你的专属导航站。点击右下角「＋」或开启「管理」模式添加你的第一个站点吧。</p>
-        <button class="btn btn-primary" @click="admin = true; siteModal = { site: null, categoryId: null }">添加第一个站点</button>
+        <div class="empty-logo" aria-hidden="true">🧭</div>
+        <h2 class="empty-title">欢迎使用 Nav-AI</h2>
+        <p class="empty-desc">这是你的专属导航站。点击右下角「＋」或开启「管理」模式添加你的第一个站点吧。</p>
+        <button class="btn btn-primary" type="button" @click="admin = true; siteModal = { site: null, categoryId: null }">添加第一个站点</button>
       </div>
 
       <!-- 搜索结果 -->
       <template v-else-if="searching">
-        <h1 class="section-title">{{ selectedTitle }}</h1>
+        <h1 class="section-title" aria-live="polite">{{ selectedTitle }}</h1>
         <div v-if="searchResults.length" class="grid">
           <SiteCard v-for="s in searchResults" :key="s.id" :site="s" :admin="admin" @edit="siteModal = { site: s, categoryId: null }" @remove="deleteSite(s)" />
         </div>
-        <p v-else class="no-result">没有找到与「{{ query }}」匹配的站点</p>
+        <div v-else class="empty-state small">
+          <div class="empty-logo" aria-hidden="true">🔍</div>
+          <p class="empty-desc">没有找到与「{{ query }}」匹配的站点</p>
+        </div>
       </template>
 
       <!-- 分类视图 -->
       <template v-else>
         <div class="view-head">
           <h1 class="section-title">{{ selectedTitle }}</h1>
-          <button v-if="admin" class="btn btn-ghost add-site-btn" @click="siteModal = { site: null, categoryId: selectedId === 'uncategorized' ? null : selectedId }">
-            ＋ 添加站点
+          <button v-if="admin" class="btn btn-ghost add-site-btn" type="button" @click="siteModal = { site: null, categoryId: selectedId === 'uncategorized' ? null : selectedId }">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            添加站点
           </button>
         </div>
 
@@ -160,21 +177,34 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
             <template v-if="selectedId === null">
               <h2 class="group-title">
                 <span class="g-icon">{{ g.icon }}</span>{{ g.title }}
-                <span class="g-count">{{ g.sites.length + g.children.reduce((n, c) => n + c.sites.length, 0) }}</span>
-                <button v-if="admin" class="g-add" title="添加站点到该分类" @click="siteModal = { site: null, categoryId: g.key }">＋</button>
+                <span class="badge">{{ g.sites.length + g.children.reduce((n, c) => n + c.sites.length, 0) }}</span>
+                <button v-if="admin" class="g-add" type="button" title="添加站点到该分类" aria-label="添加站点到该分类" @click="siteModal = { site: null, categoryId: g.key }">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                </button>
               </h2>
             </template>
 
             <div v-if="g.sites.length || admin" class="grid">
               <SiteCard v-for="s in g.sites" :key="s.id" :site="s" :admin="admin" @edit="siteModal = { site: s, categoryId: null }" @remove="deleteSite(s)" />
-              <button v-if="admin && g.key !== 'uncat'" class="add-card" @click="siteModal = { site: null, categoryId: g.key }">＋ 添加站点</button>
+              <button v-if="admin && g.key !== 'uncat'" class="add-card btn-dashed" type="button" @click="siteModal = { site: null, categoryId: g.key }">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                添加站点
+              </button>
             </div>
 
             <div v-for="child in g.children" :key="child.key" class="sub-group">
               <h3 v-if="child.sites.length" class="sub-title">
                 <span class="g-icon">{{ child.icon }}</span>{{ child.title }}
-                <span class="g-count">{{ child.sites.length }}</span>
-                <button v-if="admin" class="g-add" title="添加站点到该子分类" @click="siteModal = { site: null, categoryId: child.key }">＋</button>
+                <span class="badge">{{ child.sites.length }}</span>
+                <button v-if="admin" class="g-add" type="button" title="添加站点到该子分类" aria-label="添加站点到该子分类" @click="siteModal = { site: null, categoryId: child.key }">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                </button>
               </h3>
               <div v-if="child.sites.length" class="grid">
                 <SiteCard v-for="s in child.sites" :key="s.id" :site="s" :admin="admin" @edit="siteModal = { site: s, categoryId: null }" @remove="deleteSite(s)" />
@@ -184,17 +214,17 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
         </template>
 
         <div v-else-if="selectedId !== null" class="empty-state small">
-          <div class="empty-logo">📭</div>
-          <p>该分类下还没有站点</p>
-          <button v-if="admin" class="btn btn-primary" @click="siteModal = { site: null, categoryId: selectedId === 'uncategorized' ? null : selectedId }">添加站点</button>
-          <button v-else class="btn btn-ghost" @click="admin = true">开启管理模式去添加</button>
+          <div class="empty-logo" aria-hidden="true">📭</div>
+          <p class="empty-desc">该分类下还没有站点</p>
+          <button v-if="admin" class="btn btn-primary" type="button" @click="siteModal = { site: null, categoryId: selectedId === 'uncategorized' ? null : selectedId }">添加站点</button>
+          <button v-else class="btn btn-ghost" type="button" @click="admin = true">开启管理模式去添加</button>
         </div>
       </template>
     </main>
   </div>
 
   <!-- 悬浮添加按钮（管理模式 + 移动端友好） -->
-  <button v-if="admin && !searching" class="fab" title="添加站点" @click="siteModal = { site: null, categoryId: null }">
+  <button v-if="admin && !searching" class="fab" type="button" title="添加站点" aria-label="添加站点" @click="siteModal = { site: null, categoryId: null }">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
       <path d="M12 5v14M5 12h14" />
     </svg>
@@ -240,39 +270,42 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
 
 .layout {
   display: flex;
-  min-height: calc(100vh - 61px);
+  min-height: calc(100vh - var(--topbar-h));
+  min-height: calc(100dvh - var(--topbar-h));
 }
 
 .main {
   flex: 1;
   min-width: 0;
-  padding: 22px 26px 60px;
+  padding: var(--sp-5) calc(var(--sp-6) + env(safe-area-inset-right, 0px)) 96px
+    calc(var(--sp-6) + env(safe-area-inset-left, 0px));
   max-width: 1400px;
 }
 
 .section-title {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 20px;
-  font-weight: 700;
-  margin-bottom: 18px;
+  gap: var(--sp-3);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+  margin-bottom: var(--sp-4);
 }
 
 .section-title::before {
   content: '';
   width: 4px;
   height: 20px;
-  border-radius: 2px;
+  border-radius: var(--radius-pill);
   background: var(--gradient);
-  box-shadow: 0 2px 8px rgb(79 124 255 / 0.4);
+  flex-shrink: 0;
 }
 
 .view-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--sp-3);
 }
 
 .add-site-btn {
@@ -280,143 +313,152 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
 }
 
 .group {
-  margin-bottom: 30px;
+  margin-bottom: var(--sp-8);
 }
 
 .group-title,
 .sub-title {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 15px;
-  font-weight: 600;
-  margin: 0 0 12px;
+  gap: var(--sp-2);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  margin: 0 0 var(--sp-3);
   color: var(--text);
 }
 
 .group-title {
-  font-size: 16px;
+  font-size: var(--fs-lg);
+}
+
+.sub-title {
+  font-size: var(--fs-md);
 }
 
 .g-icon {
-  font-size: 17px;
-}
-
-.g-count {
-  font-size: 11.5px;
-  font-weight: 400;
-  color: var(--text-3);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0 8px;
-  line-height: 18px;
+  font-size: var(--fs-lg);
+  line-height: 1;
 }
 
 .g-add {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  color: var(--text-3);
-  display: flex;
+  position: relative;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 15px;
-  opacity: 0;
-  transition: opacity 0.15s, color 0.15s;
+  width: var(--icon-btn-sm);
+  height: var(--icon-btn-sm);
+  border-radius: var(--radius-xs);
+  color: var(--text-2);
+  transition: opacity var(--dur-1), color var(--dur-1), background var(--dur-1);
 }
 
-.group:hover .g-add,
-.sub-title:hover .g-add {
-  opacity: 1;
+.g-add::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
 }
 
 .g-add:hover {
   color: var(--accent);
-  background: var(--surface-hover);
+  background: var(--accent-weak);
+}
+
+/* 桌面端悬停/聚焦显现；触摸设备常显 */
+@media (hover: hover) {
+  .g-add {
+    opacity: 0;
+  }
+
+  .group:hover .g-add,
+  .sub-title:hover .g-add,
+  .g-add:focus-visible {
+    opacity: 1;
+  }
 }
 
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 14px;
+  gap: var(--sp-3);
 }
 
 .sub-group {
-  margin-top: 18px;
+  margin-top: var(--sp-4);
 }
 
 .add-card {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 68px;
-  border: 1.5px dashed var(--border);
-  border-radius: var(--radius);
-  color: var(--text-3);
-  font-size: 13.5px;
-  transition: border-color 0.15s, color 0.15s;
+  min-height: 70px;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
 }
 
-.add-card:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
+/* 空状态（统一模式：装饰图标 / 标题 / 说明 / 操作） */
 .empty-state {
-  text-align: center;
-  padding: 90px 20px 40px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  text-align: center;
+  gap: var(--sp-3);
+  padding: 72px var(--sp-5) var(--sp-6);
 }
 
 .empty-state.small {
-  padding: 60px 20px;
+  padding: var(--sp-8) var(--sp-5);
+  gap: var(--sp-2);
 }
 
 .empty-logo {
-  font-size: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  font-size: 32px;
+  line-height: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
 }
 
-.empty-state h2 {
-  font-size: 22px;
-  font-weight: 800;
+.empty-state.small .empty-logo {
+  width: 52px;
+  height: 52px;
+  font-size: 26px;
+}
+
+.empty-title {
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
   background: var(--gradient);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 
-.empty-state p {
-  color: var(--text-3);
-  font-size: 14px;
-  max-width: 380px;
-}
-
-.no-result {
-  text-align: center;
-  color: var(--text-3);
-  padding: 60px 0;
-  font-size: 14px;
+.empty-desc {
+  color: var(--text-2);
+  font-size: var(--fs-md);
+  line-height: var(--lh-relaxed);
+  max-width: 400px;
 }
 
 .fab {
   position: fixed;
-  right: 26px;
-  bottom: 26px;
+  right: calc(var(--sp-6) + env(safe-area-inset-right, 0px));
+  bottom: calc(var(--sp-6) + env(safe-area-inset-bottom, 0px));
   z-index: 60;
   width: 52px;
   height: 52px;
   border-radius: 50%;
   background: var(--gradient);
-  color: #fff;
+  color: var(--on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 8px 24px rgb(79 124 255 / 0.45);
-  transition: transform 0.15s, box-shadow 0.15s;
+  box-shadow: 0 10px 28px -6px color-mix(in srgb, var(--accent) 55%, transparent);
+  transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2);
 }
 
 .fab::after {
@@ -425,7 +467,7 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
   inset: -5px;
   border-radius: 50%;
   border: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
-  animation: fab-pulse 2.4s ease-out infinite;
+  animation: fab-pulse 2.4s var(--ease-out) 3;
 }
 
 @keyframes fab-pulse {
@@ -433,10 +475,7 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
     transform: scale(0.92);
     opacity: 0.9;
   }
-  70% {
-    transform: scale(1.18);
-    opacity: 0;
-  }
+  70%,
   100% {
     transform: scale(1.18);
     opacity: 0;
@@ -444,23 +483,30 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
 }
 
 .fab:hover {
-  transform: translateY(-2px) scale(1.04);
-  box-shadow: 0 12px 30px rgb(79 124 255 / 0.55);
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 14px 34px -6px color-mix(in srgb, var(--accent) 62%, transparent);
 }
 
 @media (max-width: 768px) {
   .main {
-    padding: 16px 14px 70px;
+    padding: var(--sp-4) calc(var(--sp-4) + env(safe-area-inset-right, 0px)) 88px
+      calc(var(--sp-4) + env(safe-area-inset-left, 0px));
   }
 
   .grid {
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 10px;
+    gap: var(--sp-2);
   }
 
   .fab {
-    right: 18px;
-    bottom: 18px;
+    right: calc(var(--sp-4) + env(safe-area-inset-right, 0px));
+    bottom: calc(var(--sp-4) + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (max-width: 480px) {
+  .empty-state {
+    padding: var(--sp-8) var(--sp-4) var(--sp-5);
   }
 }
 </style>

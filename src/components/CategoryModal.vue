@@ -91,21 +91,49 @@ function move(node, dir, parentId) {
       <div v-for="(cat, i) in store.categories" :key="cat.id" class="cat-group">
         <div class="cat-row">
           <template v-if="renaming === cat.id">
-            <input v-model="renameForm.icon" class="icon-input" placeholder="图标" maxlength="2" />
-            <input v-model="renameForm.name" class="name-input" placeholder="分类名称" @keyup.enter="saveRename(cat.id)" />
-            <button class="op ok" title="保存" @click="saveRename(cat.id)">✓</button>
-            <button class="op" title="取消" @click="renaming = null">✕</button>
+            <input v-model="renameForm.icon" class="field-input icon-input" type="text" placeholder="图标" aria-label="分类图标" maxlength="2" />
+            <input v-model="renameForm.name" class="field-input name-input" type="text" placeholder="分类名称" aria-label="分类名称" @keyup.enter="saveRename(cat.id)" />
+            <button class="icon-btn-sm op ok" type="button" title="保存" aria-label="保存" @click="saveRename(cat.id)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M20 6 9 17l-5-5" />
+              </svg>
+            </button>
+            <button class="icon-btn-sm op" type="button" title="取消" aria-label="取消" @click="renaming = null">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
           </template>
           <template v-else>
-            <span class="cat-icon">{{ cat.icon || '📁' }}</span>
+            <span class="cat-icon" aria-hidden="true">{{ cat.icon || '📁' }}</span>
             <span class="cat-name">{{ cat.name }}</span>
             <span class="cat-count">{{ cat.children.length }} 个子分类</span>
             <span class="row-ops">
-              <button class="op" title="上移" :disabled="i === 0" @click="move(cat, -1)">↑</button>
-              <button class="op" title="下移" :disabled="i === store.categories.length - 1" @click="move(cat, 1)">↓</button>
-              <button class="op" title="添加子分类" @click="openChildForm(cat.id)">＋</button>
-              <button class="op" title="重命名" @click="startRename(cat)">✎</button>
-              <button class="op danger" title="删除" @click="askDelete(cat)">🗑</button>
+              <button class="icon-btn-sm op" type="button" title="上移" aria-label="上移" :disabled="i === 0" @click="move(cat, -1)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M12 19V5M5 12l7-7 7 7" />
+                </svg>
+              </button>
+              <button class="icon-btn-sm op" type="button" title="下移" aria-label="下移" :disabled="i === store.categories.length - 1" @click="move(cat, 1)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M12 5v14M19 12l-7 7-7-7" />
+                </svg>
+              </button>
+              <button class="icon-btn-sm op" type="button" title="添加子分类" aria-label="添加子分类" @click="openChildForm(cat.id)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+              </button>
+              <button class="icon-btn-sm op" type="button" title="重命名" aria-label="重命名" @click="startRename(cat)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                </svg>
+              </button>
+              <button class="icon-btn-sm op danger" type="button" title="删除" aria-label="删除" @click="askDelete(cat)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                </svg>
+              </button>
             </span>
           </template>
         </div>
@@ -114,30 +142,62 @@ function move(node, dir, parentId) {
         <div v-if="cat.children.length || addingChildOf === cat.id" class="sub-list">
           <div v-for="(child, j) in cat.children" :key="child.id" class="cat-row sub">
             <template v-if="renaming === child.id">
-              <input v-model="renameForm.icon" class="icon-input" placeholder="图标" maxlength="2" />
-              <input v-model="renameForm.name" class="name-input" placeholder="子分类名称" @keyup.enter="saveRename(child.id)" />
-              <button class="op ok" title="保存" @click="saveRename(child.id)">✓</button>
-              <button class="op" title="取消" @click="renaming = null">✕</button>
+              <input v-model="renameForm.icon" class="field-input icon-input" type="text" placeholder="图标" aria-label="子分类图标" maxlength="2" />
+              <input v-model="renameForm.name" class="field-input name-input" type="text" placeholder="子分类名称" aria-label="子分类名称" @keyup.enter="saveRename(child.id)" />
+              <button class="icon-btn-sm op ok" type="button" title="保存" aria-label="保存" @click="saveRename(child.id)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+              </button>
+              <button class="icon-btn-sm op" type="button" title="取消" aria-label="取消" @click="renaming = null">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
             </template>
             <template v-else>
-              <span class="cat-icon">{{ child.icon || '📂' }}</span>
+              <span class="cat-icon" aria-hidden="true">{{ child.icon || '📂' }}</span>
               <span class="cat-name">{{ child.name }}</span>
               <span class="cat-count">{{ store.sites.filter((s) => s.categoryId === child.id).length }} 个站点</span>
               <span class="row-ops">
-                <button class="op" title="上移" :disabled="j === 0" @click="move(child, -1)">↑</button>
-                <button class="op" title="下移" :disabled="j === cat.children.length - 1" @click="move(child, 1)">↓</button>
-                <button class="op" title="重命名" @click="startRename(child)">✎</button>
-                <button class="op danger" title="删除" @click="askDelete(child)">🗑</button>
+                <button class="icon-btn-sm op" type="button" title="上移" aria-label="上移" :disabled="j === 0" @click="move(child, -1)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 19V5M5 12l7-7 7 7" />
+                  </svg>
+                </button>
+                <button class="icon-btn-sm op" type="button" title="下移" aria-label="下移" :disabled="j === cat.children.length - 1" @click="move(child, 1)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 5v14M19 12l-7 7-7-7" />
+                  </svg>
+                </button>
+                <button class="icon-btn-sm op" type="button" title="重命名" aria-label="重命名" @click="startRename(child)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                  </svg>
+                </button>
+                <button class="icon-btn-sm op danger" type="button" title="删除" aria-label="删除" @click="askDelete(child)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                  </svg>
+                </button>
               </span>
             </template>
           </div>
 
           <!-- 添加子分类表单 -->
           <div v-if="addingChildOf === cat.id" class="cat-row sub">
-            <input v-model="childForm.icon" class="icon-input" placeholder="图标" maxlength="2" />
-            <input v-model="childForm.name" class="name-input" placeholder="子分类名称" @keyup.enter="saveChild" />
-            <button class="op ok" title="确定" @click="saveChild">✓</button>
-            <button class="op" title="取消" @click="addingChildOf = null">✕</button>
+            <input v-model="childForm.icon" class="field-input icon-input" type="text" placeholder="图标" aria-label="子分类图标" maxlength="2" data-autofocus />
+            <input v-model="childForm.name" class="field-input name-input" type="text" placeholder="子分类名称" aria-label="子分类名称" @keyup.enter="saveChild" />
+            <button class="icon-btn-sm op ok" type="button" title="确定" aria-label="确定" @click="saveChild">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M20 6 9 17l-5-5" />
+              </svg>
+            </button>
+            <button class="icon-btn-sm op" type="button" title="取消" aria-label="取消" @click="addingChildOf = null">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         </div>
       </div>
@@ -147,14 +207,25 @@ function move(node, dir, parentId) {
 
       <!-- 添加顶级分类 -->
       <div v-if="showTopForm" class="cat-row">
-        <input v-model="topForm.icon" class="icon-input" placeholder="图标" maxlength="2" />
-        <input v-model="topForm.name" class="name-input" placeholder="分类名称" @keyup.enter="saveTop" />
-        <button class="op ok" title="确定" @click="saveTop">✓</button>
-        <button class="op" title="取消" @click="showTopForm = false">✕</button>
+        <input v-model="topForm.icon" class="field-input icon-input" type="text" placeholder="图标" aria-label="分类图标" maxlength="2" />
+        <input v-model="topForm.name" class="field-input name-input" type="text" placeholder="分类名称" aria-label="分类名称" @keyup.enter="saveTop" />
+        <button class="icon-btn-sm op ok" type="button" title="确定" aria-label="确定" @click="saveTop">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20 6 9 17l-5-5" />
+          </svg>
+        </button>
+        <button class="icon-btn-sm op" type="button" title="取消" aria-label="取消" @click="showTopForm = false">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </button>
       </div>
 
-      <button class="btn btn-ghost add-btn" @click="showTopForm = true; renaming = null; addingChildOf = null">
-        ＋ 添加分类
+      <button class="btn-dashed add-btn" type="button" @click="showTopForm = true; renaming = null; addingChildOf = null">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+        添加分类
       </button>
     </div>
 
@@ -166,8 +237,8 @@ function move(node, dir, parentId) {
         <template v-if="deleteInfo.sites">其中 {{ deleteInfo.sites }} 个站点将移入「未分类」。</template>
       </p>
       <div class="confirm-ops">
-        <button class="btn btn-ghost" @click="pendingDelete = null">取消</button>
-        <button class="btn btn-danger-solid" @click="confirmDelete">确认删除</button>
+        <button class="btn btn-ghost" type="button" @click="pendingDelete = null">取消</button>
+        <button class="btn btn-danger-solid" type="button" @click="confirmDelete">确认删除</button>
       </div>
     </div>
 
@@ -181,10 +252,7 @@ function move(node, dir, parentId) {
 .cats {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-height: 52vh;
-  overflow-y: auto;
-  padding-right: 4px;
+  gap: var(--sp-3);
 }
 
 .cat-group {
@@ -196,13 +264,14 @@ function move(node, dir, parentId) {
 .cat-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
+  gap: var(--sp-2);
+  min-height: 44px;
+  padding: var(--sp-2) var(--sp-3);
   background: var(--surface);
 }
 
 .cat-row.sub {
-  padding-left: 30px;
+  padding-left: var(--sp-8);
   border-top: 1px dashed var(--border);
   background: var(--bg-soft);
 }
@@ -214,15 +283,15 @@ function move(node, dir, parentId) {
 }
 
 .cat-icon {
-  font-size: 16px;
+  font-size: var(--fs-lg);
   width: 22px;
   text-align: center;
   flex-shrink: 0;
 }
 
 .cat-name {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
   flex: 1;
   min-width: 0;
   white-space: nowrap;
@@ -231,76 +300,50 @@ function move(node, dir, parentId) {
 }
 
 .cat-count {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
   flex-shrink: 0;
 }
 
 .row-ops {
   display: flex;
-  gap: 2px;
-  opacity: 0;
-  transition: opacity 0.15s;
+  gap: var(--sp-1);
   flex-shrink: 0;
 }
 
-.cat-row:hover .row-ops,
-.cat-row:focus-within .row-ops {
-  opacity: 1;
-}
-
-.op {
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-  color: var(--text-2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-}
-
-.op:hover {
-  background: var(--surface-hover);
-  color: var(--accent);
-}
-
-.op.danger:hover {
-  color: var(--danger);
-}
-
-.op.ok:hover {
-  color: var(--ok);
-}
-
 .op:disabled {
-  opacity: 0.3;
+  opacity: 0.35;
   cursor: not-allowed;
+}
+
+/* 桌面端悬停/聚焦显现；触摸设备常显 */
+@media (hover: hover) {
+  .row-ops {
+    opacity: 0;
+    transition: opacity var(--dur-1);
+  }
+
+  .cat-row:hover .row-ops,
+  .cat-row:focus-within .row-ops {
+    opacity: 1;
+  }
 }
 
 .icon-input {
   width: 52px;
-  height: 30px;
-  padding: 0 8px;
-  text-align: center;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-soft);
-  outline: none;
-  font-size: 13px;
   flex-shrink: 0;
+  text-align: center;
+  height: var(--control-h-sm);
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-sm);
 }
 
 .name-input {
   flex: 1;
-  height: 30px;
-  padding: 0 10px;
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  background: var(--bg-soft);
-  outline: none;
-  font-size: 13px;
+  width: auto;
   min-width: 0;
+  height: var(--control-h-sm);
+  font-size: var(--fs-sm);
 }
 
 .add-btn {
@@ -308,35 +351,35 @@ function move(node, dir, parentId) {
 }
 
 .empty {
-  font-size: 13px;
-  color: var(--text-3);
+  font-size: var(--fs-sm);
+  color: var(--text-2);
   text-align: center;
-  padding: 12px 0;
+  padding: var(--sp-3) 0;
 }
 
 .confirm {
-  margin-top: 14px;
-  padding: 14px;
+  margin-top: var(--sp-4);
+  padding: var(--sp-4);
   border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border));
   background: color-mix(in srgb, var(--danger) 6%, var(--surface));
   border-radius: var(--radius-sm);
 }
 
 .confirm p {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-2);
-  line-height: 1.6;
+  line-height: var(--lh-relaxed);
 }
 
 .confirm-ops {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 10px;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
 }
 
 .tip {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
 }
 </style>

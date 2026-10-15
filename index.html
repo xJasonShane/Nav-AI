@@ -5,16 +5,31 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="轻量级纯静态导航站 - 收藏与管理你的常用站点" />
-    <meta name="theme-color" content="#4f7cff" />
+    <meta name="theme-color" content="#f6f8fd" />
     <title>Nav-AI</title>
     <script>
-      // 首屏前同步应用主题，避免闪烁
+      // 首屏前同步应用主题，避免闪烁；并让 theme-color 跟随主题
       (function () {
         try {
           var s = JSON.parse(localStorage.getItem('nav-ai-data-v1') || '{}');
           var t = (s.settings && s.settings.theme) || 'auto';
           var dark = t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
           document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+
+          var syncMeta = function () {
+            var el = document.querySelector('meta[name="theme-color"]');
+            if (el) {
+              el.setAttribute(
+                'content',
+                document.documentElement.dataset.theme === 'dark' ? '#0a0f1b' : '#f6f8fd'
+              );
+            }
+          };
+          syncMeta();
+          new MutationObserver(syncMeta).observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['data-theme'],
+          });
         } catch (e) {}
       })();
     </script>

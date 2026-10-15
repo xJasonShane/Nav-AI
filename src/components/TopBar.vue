@@ -28,14 +28,14 @@ const themeLabel = { auto: '跟随系统', light: '浅色模式', dark: '深色�
 
 <template>
   <header class="topbar">
-    <button class="icon-btn menu-btn" aria-label="打开分类菜单" @click="emit('toggle-sidebar')">
+    <button class="icon-btn menu-btn" type="button" aria-label="打开分类菜单" @click="emit('toggle-sidebar')">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <path d="M3 6h18M3 12h18M3 18h18" />
       </svg>
     </button>
 
-    <a class="brand" href="#">
-      <span class="logo">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">
         <svg width="18" height="18" viewBox="0 0 64 64" fill="none">
           <g transform="rotate(45 32 32)">
             <path d="M32 14 L37.4 32 L32 50 L26.6 32 Z" fill="#fff" />
@@ -45,10 +45,10 @@ const themeLabel = { auto: '跟随系统', light: '浅色模式', dark: '深色�
         </svg>
       </span>
       <span class="brand-name">{{ store.settings.title }}</span>
-    </a>
+    </div>
 
-    <div class="search">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+    <div class="search" role="search">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
         <circle cx="11" cy="11" r="7" />
         <path d="m20 20-3.5-3.5" />
       </svg>
@@ -56,18 +56,19 @@ const themeLabel = { auto: '跟随系统', light: '浅色模式', dark: '深色�
         type="search"
         :value="query"
         placeholder="搜索站点名称、描述或网址…"
+        aria-label="搜索站点，按 / 键快速聚焦"
         @input="emit('update:query', $event.target.value)"
       />
-      <kbd v-if="!query">/</kbd>
+      <kbd v-if="!query" aria-hidden="true">/</kbd>
     </div>
 
     <div class="actions">
-      <button class="icon-btn" :title="themeLabel[store.settings.theme]" aria-label="切换主题" @click="cycleTheme">
-        <svg v-if="themeIcon === 'auto'" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="4" />
-          <path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4m11.4-11.4 1.4-1.4" />
+      <button class="icon-btn" type="button" :title="themeLabel[store.settings.theme]" :aria-label="'切换主题（当前：' + themeLabel[store.settings.theme] + '）'" @click="cycleTheme">
+        <svg v-if="themeIcon === 'auto'" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none" />
         </svg>
-        <svg v-else-if="themeIcon === 'light'" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <svg v-else-if="themeIcon === 'sun'" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <circle cx="12" cy="12" r="4" />
           <path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4m11.4-11.4 1.4-1.4" />
         </svg>
@@ -76,7 +77,7 @@ const themeLabel = { auto: '跟随系统', light: '浅色模式', dark: '深色�
         </svg>
       </button>
 
-      <button class="icon-btn" title="数据管理（导入 / 导出）" aria-label="数据管理" @click="emit('open-data')">
+      <button class="icon-btn" type="button" title="数据管理（导入 / 导出）" aria-label="数据管理" @click="emit('open-data')">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <ellipse cx="12" cy="5" rx="8" ry="3" />
           <path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5" />
@@ -84,8 +85,8 @@ const themeLabel = { auto: '跟随系统', light: '浅色模式', dark: '深色�
         </svg>
       </button>
 
-      <button class="btn admin-toggle" :class="admin ? 'btn-primary' : 'btn-ghost'" @click="emit('toggle-admin')">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <button class="btn admin-toggle" type="button" :class="admin ? 'btn-primary' : 'btn-ghost'" :aria-pressed="admin" @click="emit('toggle-admin')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M12 20h9" />
           <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
         </svg>
@@ -99,14 +100,20 @@ const themeLabel = { auto: '跟随系统', light: '浅色模式', dark: '深色�
 .topbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 20px;
+  gap: var(--sp-3);
+  padding: var(--sp-3) calc(var(--sp-5) + env(safe-area-inset-right, 0px)) var(--sp-3)
+    calc(var(--sp-5) + env(safe-area-inset-left, 0px));
   position: sticky;
   top: 0;
   z-index: 50;
   background: color-mix(in srgb, var(--bg) 82%, transparent);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
+}
+
+.icon-btn {
+  width: var(--control-h);
+  height: var(--control-h);
 }
 
 .menu-btn {
@@ -116,7 +123,7 @@ const themeLabel = { auto: '跟随系统', light: '浅色模式', dark: '深色�
 .brand {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--sp-2);
   flex-shrink: 0;
   min-width: 0;
 }
@@ -124,18 +131,18 @@ const themeLabel = { auto: '跟随系统', light: '浅色模式', dark: '深色�
 .logo {
   width: 30px;
   height: 30px;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   background: var(--gradient);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 3px 10px rgb(79 124 255 / 0.4);
+  box-shadow: var(--shadow-accent-sm);
   flex-shrink: 0;
 }
 
 .brand-name {
-  font-size: 16px;
-  font-weight: 800;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
   letter-spacing: 0.2px;
   background: var(--gradient);
   -webkit-background-clip: text;
@@ -152,23 +159,24 @@ const themeLabel = { auto: '跟随系统', light: '浅色模式', dark: '深色�
   max-width: 460px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  height: 36px;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-3);
+  height: var(--control-h);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   color: var(--text-3);
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color var(--dur-1), box-shadow var(--dur-1);
   margin: 0 auto;
 }
 
+.search svg {
+  flex-shrink: 0;
+}
+
 .search:focus-within {
-  border-color: transparent;
-  background: var(--surface-hover);
-  box-shadow:
-    0 0 0 1.5px var(--accent),
-    0 0 0 5px color-mix(in srgb, var(--accent) 13%, transparent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
 .search input {
@@ -176,39 +184,42 @@ const themeLabel = { auto: '跟随系统', light: '浅色模式', dark: '深色�
   border: none;
   outline: none;
   background: transparent;
-  font-size: 13.5px;
+  font-size: var(--fs-sm);
   color: var(--text);
   min-width: 0;
 }
 
-.search input::placeholder {
-  color: var(--text-3);
+.search input:focus-visible {
+  outline: none;
 }
 
 .search kbd {
-  font-size: 11px;
-  padding: 1px 7px;
+  font-size: var(--fs-xs);
+  line-height: 1;
+  padding: 3px 7px;
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--radius-xs);
   background: var(--bg-soft);
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
   flex-shrink: 0;
 }
 
 .admin-toggle {
-  padding: 7px 14px;
+  padding: 0 var(--sp-3);
+  min-width: 104px;
 }
 
 @media (max-width: 768px) {
   .topbar {
-    padding: 10px 14px;
-    gap: 8px;
+    gap: var(--sp-2);
+    padding: 10px calc(14px + env(safe-area-inset-right, 0px)) 10px
+      calc(14px + env(safe-area-inset-left, 0px));
   }
 
   .menu-btn {
@@ -223,9 +234,20 @@ const themeLabel = { auto: '跟随系统', light: '浅色模式', dark: '深色�
     margin: 0;
   }
 
+  .search kbd {
+    display: none;
+  }
+
   .admin-toggle {
-    padding: 7px 10px;
-    font-size: 13px;
+    padding: 0 10px;
+    min-width: 96px;
+    font-size: var(--fs-sm);
+  }
+}
+
+@media (max-width: 420px) {
+  .topbar {
+    gap: var(--sp-1);
   }
 }
 </style>

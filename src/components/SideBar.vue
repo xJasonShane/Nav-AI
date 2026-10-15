@@ -1,6 +1,7 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, watch, onBeforeUnmount } from 'vue'
 import { store, sitesOf } from '../store/data.js'
+import { lockScroll, unlockScroll } from '../utils/scroll-lock.js'
 
 const props = defineProps({
   selectedId: { type: String, default: null },
@@ -18,6 +19,41 @@ function countOf(cat) {
 
 const uncategorizedCount = computed(() => sitesOf(null).length)
 
+/** Esc 关闭抽屉 */
+function onEsc(e) {
+  if (e.key === 'Escape') emit('close')
+}
+
+// 移动端抽屉打开时：支持 Esc 关闭 + 锁定背景滚动
+let locked = false
+watch(
+  () => props.open,
+  (v) => {
+    const isMobile = window.matchMedia('(max-width: 768px)').matches
+    if (v && isMobile) {
+      document.addEventListener('keydown', onEsc)
+      if (!locked) {
+        lockScroll()
+        locked = true
+      }
+    } else {
+      document.removeEventListener('keydown', onEsc)
+      if (locked) {
+        unlockScroll()
+        locked = false
+      }
+    }
+  }
+)
+
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onEsc)
+  if (locked) {
+    unlockScroll()
+    locked = false
+  }
+})
+
 function pick(id) {
   emit('select', id)
   emit('close')
@@ -29,41 +65,52 @@ function pick(id) {
     <div class="drawer-mask" :class="{ show: open }" @click="emit('close')"></div>
   </Teleport>
 
-  <aside class="sidebar" :class="{ open }">
+  <aside class="sidebar" :class="{ open }" aria-label="分类导航">
+    <div class="drawer-head">
+      <span class="drawer-title">分类导航</span>
+      <button class="icon-btn" type="button" aria-label="关闭菜单" @click="emit('close')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+          <path d="M18 6 6 18M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+
     <nav class="nav">
-      <button class="nav-item" :class="{ active: selectedId === null }" @click="pick(null)">
+      <button class="nav-item" type="button" :class="{ active: selectedId === null }" :aria-current="selectedId === null ? 'true' : undefined" @click="pick(null)">
         <span class="nav-icon">🏠</span>
         <span class="nav-name">全部分类</span>
-        <span class="nav-count">{{ store.sites.length }}</span>
+        <span class="badge">{{ store.sites.length }}</span>
       </button>
 
       <template v-for="cat in store.categories" :key="cat.id">
-        <button class="nav-item" :class="{ active: selectedId === cat.id }" @click="pick(cat.id)">
+        <button class="nav-item" type="button" :class="{ active: selectedId === cat.id }" :aria-current="selectedId === cat.id ? 'true' : undefined" @click="pick(cat.id)">
           <span class="nav-icon">{{ cat.icon || '📁' }}</span>
           <span class="nav-name">{{ cat.name }}</span>
-          <span class="nav-count">{{ countOf(cat) }}</span>
+          <span class="badge">{{ countOf(cat) }}</span>
         </button>
         <button
           v-for="child in cat.children"
           :key="child.id"
+          type="button"
           class="nav-item sub"
           :class="{ active: selectedId === child.id }"
+          :aria-current="selectedId === child.id ? 'true' : undefined"
           @click="pick(child.id)"
         >
           <span class="nav-icon">{{ child.icon || '📂' }}</span>
           <span class="nav-name">{{ child.name }}</span>
-          <span class="nav-count">{{ sitesOf(child.id).length }}</span>
+          <span class="badge">{{ sitesOf(child.id).length }}</span>
         </button>
       </template>
 
-      <button v-if="uncategorizedCount" class="nav-item" :class="{ active: selectedId === 'uncategorized' }" @click="pick('uncategorized')">
+      <button v-if="uncategorizedCount" class="nav-item" type="button" :class="{ active: selectedId === 'uncategorized' }" :aria-current="selectedId === 'uncategorized' ? 'true' : undefined" @click="pick('uncategorized')">
         <span class="nav-icon">📥</span>
         <span class="nav-name">未分类</span>
-        <span class="nav-count">{{ uncategorizedCount }}</span>
+        <span class="badge">{{ uncategorizedCount }}</span>
       </button>
     </nav>
 
-    <button class="manage-cats" @click="emit('manage-categories')">
+    <button class="btn-dashed manage-cats" type="button" @click="emit('manage-categories')">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M4 7h16M4 12h16M4 17h10" />
         <path d="m18 15 2 2 4-4" transform="translate(-4 2)" />
@@ -78,15 +125,20 @@ function pick(id) {
   width: var(--sidebar-w);
   flex-shrink: 0;
   position: sticky;
-  top: 61px;
-  height: calc(100vh - 61px);
+  top: var(--topbar-h);
+  height: calc(100vh - var(--topbar-h));
+  height: calc(100dvh - var(--topbar-h));
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border);
   background: var(--bg-soft);
-  padding: 14px 10px;
-  gap: 12px;
+  padding: var(--sp-3) var(--sp-2) var(--sp-3) calc(var(--sp-2) + env(safe-area-inset-left, 0px));
+  gap: var(--sp-3);
   overflow-y: auto;
+}
+
+.drawer-head {
+  display: none;
 }
 
 .nav {
@@ -99,26 +151,27 @@ function pick(id) {
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
+  gap: var(--sp-2);
+  min-height: 36px;
+  padding: var(--sp-2) var(--sp-3);
   border-radius: var(--radius-sm);
-  font-size: 13.5px;
+  font-size: var(--fs-sm);
   color: var(--text-2);
   text-align: left;
-  transition: background 0.15s, color 0.15s;
+  transition: background var(--dur-1), color var(--dur-1);
   width: 100%;
 }
 
 .nav-item:hover {
-  background: var(--surface-hover);
+  background: var(--accent-weak);
   color: var(--text);
 }
 
 .nav-item.active {
   background: var(--surface);
   color: var(--accent);
-  font-weight: 600;
-  box-shadow: var(--shadow);
+  font-weight: var(--fw-semibold);
+  box-shadow: var(--shadow-xs);
   position: relative;
 }
 
@@ -130,22 +183,22 @@ function pick(id) {
   transform: translateY(-50%);
   width: 3px;
   height: 16px;
-  border-radius: 0 3px 3px 0;
-  background: var(--gradient);
+  border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
+  background: var(--accent);
 }
 
-.nav-item.active .nav-count {
+.nav-item.active .badge {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
 }
 
 .nav-item.sub {
   padding-left: 28px;
-  font-size: 13px;
 }
 
 .nav-icon {
   width: 20px;
+  font-size: var(--fs-lg);
   text-align: center;
   flex-shrink: 0;
 }
@@ -158,31 +211,10 @@ function pick(id) {
   text-overflow: ellipsis;
 }
 
-.nav-count {
-  font-size: 11.5px;
-  color: var(--text-3);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0 7px;
-  line-height: 18px;
-}
-
 .manage-cats {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 10px;
-  border-radius: var(--radius-sm);
-  font-size: 13.5px;
-  color: var(--text-2);
-  border: 1px dashed var(--border);
-  transition: border-color 0.15s, color 0.15s;
-}
-
-.manage-cats:hover {
-  color: var(--accent);
-  border-color: var(--accent);
+  width: 100%;
+  justify-content: flex-start;
+  padding: 0 var(--sp-3);
 }
 
 .drawer-mask {
@@ -194,15 +226,36 @@ function pick(id) {
     position: fixed;
     left: 0;
     top: 0;
+    width: var(--drawer-w);
     height: 100vh;
+    height: 100dvh;
     z-index: 90;
     transform: translateX(-100%);
-    transition: transform 0.22s ease;
-    box-shadow: var(--shadow-hover);
+    visibility: hidden;
+    transition: transform var(--dur-3) var(--ease-out), visibility 0s linear var(--dur-3);
+    box-shadow: none;
+    padding-top: calc(var(--sp-3) + env(safe-area-inset-top, 0px));
+    padding-bottom: calc(var(--sp-3) + env(safe-area-inset-bottom, 0px));
   }
 
   .sidebar.open {
     transform: translateX(0);
+    visibility: visible;
+    transition: transform var(--dur-3) var(--ease-out);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    padding: 0 var(--sp-1) var(--sp-2);
+  }
+
+  .drawer-title {
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-semibold);
   }
 
   .drawer-mask {
@@ -213,7 +266,7 @@ function pick(id) {
     background: var(--mask);
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.2s;
+    transition: opacity var(--dur-2) var(--ease-out);
   }
 
   .drawer-mask.show {

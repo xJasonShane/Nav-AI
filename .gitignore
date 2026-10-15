@@ -42,3 +42,8 @@ desktop.ini
 
 # 包管理器（保留 lock 文件以保证可复现构建）
 # package-lock.json 已纳入版本控制，请勿忽略
+
+# 其他
+.trae/
+.workbuddy/
+docs/

@@ -64,39 +64,69 @@ function submit() {
   <Modal :title="isEdit ? '编辑站点' : '添加站点'" :width="440" @close="emit('close')">
     <form class="form" @submit.prevent="submit">
       <label class="field">
-        <span class="label">名称 <i>*</i></span>
-        <input v-model="form.name" type="text" placeholder="例如：GitHub" :class="{ invalid: error.name }" />
-        <span v-if="error.name" class="err">{{ error.name }}</span>
+        <span class="label">名称 <i aria-hidden="true">*</i></span>
+        <input
+          v-model="form.name"
+          class="field-input"
+          type="text"
+          placeholder="例如：GitHub"
+          :class="{ invalid: error.name }"
+          :aria-invalid="error.name ? 'true' : undefined"
+          :aria-describedby="error.name ? 'site-name-err' : undefined"
+          data-autofocus
+        />
+        <span v-if="error.name" id="site-name-err" class="err">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 8v5m0 3.4h.01" />
+          </svg>
+          {{ error.name }}
+        </span>
       </label>
 
       <label class="field">
-        <span class="label">网址 <i>*</i></span>
-        <input v-model="form.url" type="text" inputmode="url" placeholder="https://example.com（可省略 https://）" :class="{ invalid: error.url }" />
-        <span v-if="error.url" class="err">{{ error.url }}</span>
+        <span class="label">网址 <i aria-hidden="true">*</i></span>
+        <input
+          v-model="form.url"
+          class="field-input"
+          type="text"
+          inputmode="url"
+          placeholder="https://example.com（可省略 https://）"
+          :class="{ invalid: error.url }"
+          :aria-invalid="error.url ? 'true' : undefined"
+          :aria-describedby="error.url ? 'site-url-err' : undefined"
+        />
+        <span v-if="error.url" id="site-url-err" class="err">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 8v5m0 3.4h.01" />
+          </svg>
+          {{ error.url }}
+        </span>
       </label>
 
       <label class="field">
         <span class="label">描述</span>
-        <input v-model="form.desc" type="text" placeholder="一句话介绍该站点（可选）" maxlength="60" />
+        <input v-model="form.desc" class="field-input" type="text" placeholder="一句话介绍该站点（可选）" maxlength="60" />
       </label>
 
       <label class="field">
         <span class="label">图标地址</span>
-        <input v-model="form.icon" type="text" inputmode="url" placeholder="留空将自动获取站点图标" />
+        <input v-model="form.icon" class="field-input" type="text" inputmode="url" placeholder="留空将自动获取站点图标" />
       </label>
 
       <label class="field">
         <span class="label">所属分类</span>
-        <select v-model="form.categoryId">
+        <select v-model="form.categoryId" class="field-input">
           <option value="">未分类</option>
-          <option v-for="opt in options" :key="opt.id" :value="opt.id">{{ '\u00A0'.repeat(opt.depth * 4) + opt.label }}</option>
+          <option v-for="opt in options" :key="opt.id" :value="opt.id">{{ (opt.depth ? '　' : '') + opt.label }}</option>
         </select>
       </label>
     </form>
 
     <template #footer>
-      <button class="btn btn-ghost" @click="emit('close')">取消</button>
-      <button class="btn btn-primary" @click="submit">{{ isEdit ? '保存' : '添加' }}</button>
+      <button class="btn btn-ghost" type="button" @click="emit('close')">取消</button>
+      <button class="btn btn-primary" type="button" @click="submit">{{ isEdit ? '保存' : '添加' }}</button>
     </template>
   </Modal>
 </template>
@@ -105,50 +135,36 @@ function submit() {
 .form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--sp-4);
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 
 .label {
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
   color: var(--text-2);
 }
 
 .label i {
-  color: var(--danger);
+  color: var(--danger-text);
   font-style: normal;
 }
 
-input,
-select {
-  height: 38px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-soft);
-  outline: none;
-  font-size: 14px;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-input:focus,
-select:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
-}
-
-input.invalid {
-  border-color: var(--danger);
-}
-
 .err {
-  font-size: 12px;
-  color: var(--danger);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--danger-text);
+  line-height: var(--lh-tight);
+}
+
+.err svg {
+  flex-shrink: 0;
 }
 </style>

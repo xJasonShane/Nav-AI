@@ -83,24 +83,24 @@ function doReset() {
       <div class="stat"><b>{{ stats.sites }}</b><span>站点</span></div>
     </div>
 
-    <p v-if="message" class="msg" :class="messageType">{{ message }}</p>
+    <p v-if="message" class="msg" :class="messageType" role="status" aria-live="polite">{{ message }}</p>
 
     <section class="sec">
       <h4>导出备份</h4>
       <p class="hint">将当前数据导出为 JSON 文件，可导入到其他设备恢复。</p>
       <div class="ops">
-        <button class="btn btn-primary" @click="download">下载备份文件</button>
-        <button class="btn btn-ghost" @click="copyJSON">复制到剪贴板</button>
+        <button class="btn btn-primary" type="button" @click="download">下载备份文件</button>
+        <button class="btn btn-ghost" type="button" @click="copyJSON">复制到剪贴板</button>
       </div>
     </section>
 
     <section class="sec">
       <h4>导入数据</h4>
       <p class="hint">粘贴备份 JSON 内容，或选择本地备份文件（将覆盖当前数据）。</p>
-      <textarea v-model="importText" rows="4" placeholder='{"version":1,"categories":[…],"sites":[…]}'></textarea>
+      <textarea v-model="importText" class="field-input" rows="4" aria-label="粘贴备份 JSON" placeholder='{"version":1,"categories":[…],"sites":[…]}'></textarea>
       <div class="ops">
-        <button class="btn btn-primary" :disabled="!importText.trim()" @click="doImportText">从文本导入</button>
-        <button class="btn btn-ghost" @click="fileInput.click()">选择备份文件…</button>
+        <button class="btn btn-primary" type="button" :disabled="!importText.trim()" @click="doImportText">从文本导入</button>
+        <button class="btn btn-ghost" type="button" @click="fileInput.click()">选择备份文件…</button>
         <input ref="fileInput" type="file" accept=".json,application/json" hidden @change="onFileChange" />
       </div>
     </section>
@@ -108,7 +108,7 @@ function doReset() {
     <section class="sec">
       <h4>恢复默认</h4>
       <p class="hint">清除当前数据，恢复为内置的演示数据。</p>
-      <button class="btn btn-danger" @click="doReset">恢复默认演示数据</button>
+      <button class="btn btn-danger" type="button" @click="doReset">恢复默认演示数据</button>
     </section>
   </Modal>
 </template>
@@ -116,8 +116,8 @@ function doReset() {
 <style scoped>
 .stats {
   display: flex;
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
 }
 
 .stat {
@@ -125,13 +125,15 @@ function doReset() {
   background: var(--bg-soft);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 12px;
+  padding: var(--sp-3);
   text-align: center;
 }
 
 .stat b {
   display: block;
-  font-size: 20px;
+  font-size: var(--fs-xl);
+  line-height: var(--lh-tight);
+  font-variant-numeric: tabular-nums;
   background: var(--gradient);
   -webkit-background-clip: text;
   background-clip: text;
@@ -139,68 +141,52 @@ function doReset() {
 }
 
 .stat span {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
 }
 
 .msg {
-  font-size: 13px;
-  padding: 8px 12px;
+  font-size: var(--fs-sm);
+  padding: var(--sp-2) var(--sp-3);
   border-radius: var(--radius-sm);
-  margin-bottom: 12px;
+  margin-bottom: var(--sp-3);
 }
 
 .msg.ok {
-  color: var(--ok);
+  color: var(--ok-text);
   background: color-mix(in srgb, var(--ok) 10%, transparent);
 }
 
 .msg.err {
-  color: var(--danger);
+  color: var(--danger-text);
   background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
 .sec {
-  padding: 14px 0;
+  padding: var(--sp-3) 0;
   border-top: 1px solid var(--border);
 }
 
 .sec h4 {
-  font-size: 14px;
-  margin-bottom: 4px;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  margin-bottom: var(--sp-1);
 }
 
 .hint {
-  font-size: 12.5px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
-  margin-bottom: 10px;
+  margin-bottom: var(--sp-3);
 }
 
 .ops {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: var(--sp-2);
   flex-wrap: wrap;
 }
 
-textarea {
-  width: 100%;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-soft);
-  padding: 10px 12px;
-  font-size: 12.5px;
-  font-family: Consolas, monospace;
-  resize: vertical;
-  outline: none;
-  margin-bottom: 10px;
-}
-
-textarea:focus {
-  border-color: var(--accent);
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+textarea.field-input {
+  margin-bottom: var(--sp-3);
 }
 </style>

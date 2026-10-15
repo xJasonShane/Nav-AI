@@ -135,7 +135,12 @@ const themeLabel = { auto: '跟随系统', light: '浅色模式', dark: '深色�
 
 .brand-name {
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -159,8 +164,11 @@ const themeLabel = { auto: '跟随系统', light: '浅色模式', dark: '深色�
 }
 
 .search:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: transparent;
+  background: var(--surface-hover);
+  box-shadow:
+    0 0 0 1.5px var(--accent),
+    0 0 0 5px color-mix(in srgb, var(--accent) 13%, transparent);
 }
 
 .search input {

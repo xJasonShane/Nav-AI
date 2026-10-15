@@ -96,22 +96,37 @@ function onImgError(e) {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 }
 
+.card:hover .name {
+  color: var(--accent);
+}
+
 .icon {
   width: 40px;
   height: 40px;
-  border-radius: 10px;
+  border-radius: 11px;
   background: var(--bg-soft);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   overflow: hidden;
+  transition: box-shadow 0.18s;
 }
 
 .icon img {
   width: 24px;
   height: 24px;
   object-fit: contain;
+  transition: transform 0.22s cubic-bezier(0.3, 1.2, 0.4, 1);
+}
+
+.card:hover .icon img {
+  transform: scale(1.14);
+}
+
+.card:hover .icon {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .avatar {
@@ -123,6 +138,11 @@ function onImgError(e) {
   color: #fff;
   font-size: 17px;
   font-weight: 600;
+  transition: transform 0.22s cubic-bezier(0.3, 1.2, 0.4, 1);
+}
+
+.card:hover .avatar {
+  transform: scale(1.1);
 }
 
 .meta {

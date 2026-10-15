@@ -115,9 +115,28 @@ function pick(id) {
 }
 
 .nav-item.active {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  background: var(--surface);
   color: var(--accent);
   font-weight: 600;
+  box-shadow: var(--shadow);
+  position: relative;
+}
+
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  border-radius: 0 3px 3px 0;
+  background: var(--gradient);
+}
+
+.nav-item.active .nav-count {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
 }
 
 .nav-item.sub {

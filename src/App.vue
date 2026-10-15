@@ -105,6 +105,12 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
 </script>
 
 <template>
+  <!-- 品牌氛围光背景 -->
+  <div class="bg-decor" aria-hidden="true">
+    <i class="glow g1"></i>
+    <i class="glow g2"></i>
+  </div>
+
   <TopBar
     v-model:query="query"
     :admin="admin"
@@ -201,6 +207,37 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
 </template>
 
 <style scoped>
+/* 品牌氛围光背景 */
+.bg-decor {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(110px);
+}
+
+.g1 {
+  width: 520px;
+  height: 420px;
+  top: -180px;
+  left: 12%;
+  background: var(--glow-1);
+}
+
+.g2 {
+  width: 460px;
+  height: 380px;
+  top: -140px;
+  right: -6%;
+  background: var(--glow-2);
+}
+
 .layout {
   display: flex;
   min-height: calc(100vh - 61px);
@@ -214,9 +251,21 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
 }
 
 .section-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   font-size: 20px;
   font-weight: 700;
   margin-bottom: 18px;
+}
+
+.section-title::before {
+  content: '';
+  width: 4px;
+  height: 20px;
+  border-radius: 2px;
+  background: var(--gradient);
+  box-shadow: 0 2px 8px rgb(79 124 255 / 0.4);
 }
 
 .view-head {
@@ -332,7 +381,12 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
 }
 
 .empty-state h2 {
-  font-size: 20px;
+  font-size: 22px;
+  font-weight: 800;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .empty-state p {
@@ -363,6 +417,30 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
   justify-content: center;
   box-shadow: 0 8px 24px rgb(79 124 255 / 0.45);
   transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.fab::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  animation: fab-pulse 2.4s ease-out infinite;
+}
+
+@keyframes fab-pulse {
+  0% {
+    transform: scale(0.92);
+    opacity: 0.9;
+  }
+  70% {
+    transform: scale(1.18);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.18);
+    opacity: 0;
+  }
 }
 
 .fab:hover {

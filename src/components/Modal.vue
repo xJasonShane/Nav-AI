@@ -60,6 +60,7 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport to="body">
+    <!-- 遮罩是对话框的父级，不能加 aria-hidden（会连同对话框一起对读屏隐藏）；弹窗语义由内部 role="dialog" + aria-modal 承担 -->
     <div class="modal-mask" @mousedown.self="emit('close')">
       <div
         ref="boxRef"

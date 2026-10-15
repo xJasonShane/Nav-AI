@@ -3,7 +3,7 @@
  * 站点卡片：图标（favicon 自动获取 + 多级回退到字母头像）、名称、描述、域名
  * 结构：容器 + 整卡链接（stretched-link）+ 管理操作浮层，保证键盘可达
  */
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 
 const props = defineProps({
   site: { type: Object, required: true },
@@ -17,6 +17,16 @@ const PALETTE = ['#4f7cff', '#9b5cff', '#0ea5e9', '#f59e0b', '#10b981', '#ef4444
 
 const iconFailed = ref(false)
 const loaded = ref(false)
+
+// 站点被编辑（图标地址 / 网址变化）后重置图标状态：否则上一次的失败结果会被永久沿用，
+// 用户补填图标地址后仍只显示字母头像，必须刷新才恢复
+watch(
+  () => [props.site.icon, props.site.url],
+  () => {
+    iconFailed.value = false
+    loaded.value = false
+  }
+)
 
 const domain = computed(() => {
   try {
@@ -57,6 +67,7 @@ function onImgError(e) {
     <span class="icon" aria-hidden="true">
       <img
         v-if="showImg"
+        :key="site.icon || autoIcon"
         :src="site.icon || autoIcon"
         alt=""
         loading="lazy"

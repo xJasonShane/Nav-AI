@@ -5,9 +5,24 @@
  *   sites:      [{ id, name, url, desc, icon, categoryId }]  categoryId 为 null 表示未分类
  *   settings:   { title, theme }
  */
-import { reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
 const STORAGE_KEY = 'nav-ai-data-v1'
+/** 数据损坏时的旁路备份键：避免被默认数据的首次写回覆盖，保留可人工恢复的现场 */
+const BACKUP_KEY = `${STORAGE_KEY}.bak`
+
+/** 读取期异常（数据损坏/存储不可用）：需用户手动关闭 */
+const loadWarning = ref('')
+/** 写入期异常（配额不足/被禁用）：写入成功后自动清除 */
+export const storageWarning = ref('')
+
+/** 合并两类存储异常的可见提示，供界面展示 */
+export const storageNotice = computed(() => storageWarning.value || loadWarning.value)
+
+export function clearStorageNotice() {
+  storageWarning.value = ''
+  loadWarning.value = ''
+}
 
 /** 生成短随机 ID */
 export function uid() {
@@ -55,14 +70,27 @@ function defaultData() {
   }
 }
 
+/** 把损坏的原始内容另存到旁路键，尽量保住可人工恢复的现场 */
+function backupRaw(raw) {
+  try { localStorage.setItem(BACKUP_KEY, raw) } catch (e) { /* 空间不足时放弃备份 */ }
+}
+
 function load() {
+  let raw = null
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
       const data = JSON.parse(raw)
       if (data && Array.isArray(data.categories) && Array.isArray(data.sites)) return data
+      backupRaw(raw)
+      loadWarning.value = `本地数据结构异常，已回退为默认示例数据；原内容已备份到 localStorage 的「${BACKUP_KEY}」。`
     }
-  } catch (e) { /* 数据损坏时回退默认 */ }
+  } catch (e) {
+    if (raw) backupRaw(raw)
+    loadWarning.value = raw
+      ? '读取本地数据失败，已回退为默认示例数据；原内容已备份，可在浏览器中手动恢复。'
+      : '无法读取浏览器本地存储，已使用默认示例数据；本次的修改可能不会被保留。'
+  }
   return defaultData()
 }
 
@@ -72,7 +100,12 @@ export const store = reactive(load())
 watch(
   store,
   (val) => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(val)) } catch (e) { /* 存储满时忽略 */ }
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(val))
+      if (storageWarning.value) storageWarning.value = '' // 写入恢复正常后清除提示
+    } catch (e) {
+      storageWarning.value = '数据保存失败：浏览器存储空间不足或已被禁用，最近的修改可能无法保留，请尽快导出备份。'
+    }
   },
   { deep: true, immediate: true }
 )
@@ -198,3 +231,6 @@ export function applyTheme() {
 media.addEventListener('change', () => {
   if (store.settings.theme === 'auto') applyTheme()
 })
+
+// 主题随数据自动应用：导入备份 / 恢复默认等直接改写 settings.theme 的路径同样生效
+watch(() => store.settings.theme, applyTheme)

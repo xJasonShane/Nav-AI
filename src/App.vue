@@ -1,12 +1,12 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import TopBar from './components/TopBar.vue'
 import SideBar from './components/SideBar.vue'
 import SiteCard from './components/SiteCard.vue'
 import SiteModal from './components/SiteModal.vue'
 import CategoryModal from './components/CategoryModal.vue'
 import DataModal from './components/DataModal.vue'
-import { store, sitesOf, removeSite } from './store/data.js'
+import { store, sitesOf, removeSite, storageNotice, clearStorageNotice } from './store/data.js'
 
 /* ------- 视图状态 ------- */
 const selectedId = ref(null) // null=全部 | 分类id | 'uncategorized'
@@ -72,6 +72,16 @@ function findCat(id, list = store.categories) {
   return null
 }
 
+// 分类被删除后，若当前视图仍指向它，回退到「全部」：避免空态误导与向失效分类写入站点
+watch(
+  () => store.categories,
+  () => {
+    const id = selectedId.value
+    if (id !== null && id !== 'uncategorized' && !findCat(id)) selectedId.value = null
+  },
+  { deep: true }
+)
+
 const selectedTitle = computed(() => {
   if (searching.value) return `搜索结果（${searchResults.value.length}）`
   if (selectedId.value === null) return '全部分类'
@@ -89,21 +99,20 @@ function deleteSite(site) {
   if (confirm(`确定删除站点「${site.name}」？`)) removeSite(site.id)
 }
 
+/** 任一浮层（弹窗或移动端抽屉）打开时，全局快捷键让位给浮层 */
+const overlayOpen = computed(
+  () => sidebarOpen.value || !!siteModal.value || showCategoryModal.value || showDataModal.value
+)
+
 /** "/" 聚焦搜索框；Esc 清空搜索（对齐使用文档） */
 function onKey(e) {
+  if (overlayOpen.value) return
   if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(e.target.tagName) && !e.target.isContentEditable) {
     e.preventDefault()
     document.querySelector('.search input')?.focus()
     return
   }
-  if (
-    e.key === 'Escape' &&
-    query.value &&
-    !sidebarOpen.value &&
-    !siteModal.value &&
-    !showCategoryModal.value &&
-    !showDataModal.value
-  ) {
+  if (e.key === 'Escape' && query.value) {
     query.value = ''
   }
 }
@@ -129,6 +138,20 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
     @open-data="showDataModal = true"
     @toggle-sidebar="sidebarOpen = !sidebarOpen"
   />
+
+  <!-- 存储异常提示（读取失败 / 写入失败），可关闭 -->
+  <div v-if="storageNotice" class="notice" role="alert">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 8v5m0 3.4h.01" />
+    </svg>
+    <span>{{ storageNotice }}</span>
+    <button class="icon-btn-sm notice-close" type="button" aria-label="关闭提示" @click="clearStorageNotice">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+        <path d="M18 6 6 18M6 6l12 12" />
+      </svg>
+    </button>
+  </div>
 
   <div class="layout">
     <SideBar
@@ -280,6 +303,33 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
   padding: var(--sp-5) calc(var(--sp-6) + env(safe-area-inset-right, 0px)) 96px
     calc(var(--sp-6) + env(safe-area-inset-left, 0px));
   max-width: 1400px;
+}
+
+/* 存储异常提示条：吸在顶栏下方，随内容滚动不丢失 */
+.notice {
+  position: sticky;
+  top: var(--topbar-h);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) calc(var(--sp-5) + env(safe-area-inset-right, 0px)) var(--sp-2)
+    calc(var(--sp-5) + env(safe-area-inset-left, 0px));
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  border-bottom: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
+  color: var(--danger-text);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-base);
+}
+
+.notice span {
+  flex: 1;
+  min-width: 0;
+}
+
+.notice .notice-close:hover {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger-text);
 }
 
 .section-title {

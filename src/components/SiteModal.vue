@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, computed } from 'vue'
 import Modal from './Modal.vue'
-import { addSite, updateSite, store } from '../store/data.js'
+import { addSite, updateSite, store, findCategory } from '../store/data.js'
 
 const props = defineProps({
   /** 编辑时传入站点对象，新建时传 null */
@@ -14,12 +14,17 @@ const emit = defineEmits(['close'])
 
 const isEdit = computed(() => !!props.site)
 
+/** 分类可能已失效（分类被删除、导入的数据带悬空 categoryId）：回退为「未分类」，避免写入孤儿数据 */
+function validCategoryId(id) {
+  return id && findCategory(id) ? id : ''
+}
+
 const form = reactive({
   name: props.site?.name || '',
   url: props.site?.url || '',
   desc: props.site?.desc || '',
   icon: props.site?.icon || '',
-  categoryId: props.site ? props.site.categoryId : props.categoryId || '',
+  categoryId: validCategoryId(props.site ? props.site.categoryId : props.categoryId),
 })
 
 const error = reactive({ name: '', url: '' })

@@ -62,7 +62,7 @@ function pick(id) {
 
 <template>
   <Teleport to="body">
-    <div class="drawer-mask" :class="{ show: open }" @click="emit('close')"></div>
+    <div class="drawer-mask" :class="{ show: open }" aria-hidden="true" @click="emit('close')"></div>
   </Teleport>
 
   <aside class="sidebar" :class="{ open }" aria-label="分类导航">

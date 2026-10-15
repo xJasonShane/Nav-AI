@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import Modal from './Modal.vue'
+import ConfirmCard from './ConfirmCard.vue'
 import { store, exportJSON, importJSON, resetData } from '../store/data.js'
 
 const emit = defineEmits(['close'])
@@ -9,6 +10,7 @@ const importText = ref('')
 const message = ref('')
 const messageType = ref('ok')
 const fileInput = ref(null)
+const confirmingReset = ref(false)
 
 const stats = computed(() => {
   let subs = 0
@@ -41,37 +43,36 @@ async function copyJSON() {
   }
 }
 
-function doImportText() {
+/** 导入并提示结果（含被归入「未分类」的站点数） */
+function applyImport(text) {
   try {
-    importJSON(importText.value)
-    importText.value = ''
-    notify('导入成功')
+    const result = importJSON(text)
+    const extra = result.moved ? `；其中 ${result.moved} 个站点的分类已失效，已归入「未分类」` : ''
+    notify(`导入成功：${result.categories} 个分类 / ${result.sites} 个站点${extra}`)
+    return true
   } catch (e) {
     notify('导入失败：' + e.message, 'err')
+    return false
   }
+}
+
+function doImportText() {
+  if (applyImport(importText.value)) importText.value = ''
 }
 
 function onFileChange(e) {
   const file = e.target.files?.[0]
   if (!file) return
   const reader = new FileReader()
-  reader.onload = () => {
-    try {
-      importJSON(String(reader.result))
-      notify('导入成功')
-    } catch (err) {
-      notify('导入失败：' + err.message, 'err')
-    }
-  }
+  reader.onload = () => applyImport(String(reader.result))
   reader.readAsText(file)
   e.target.value = ''
 }
 
 function doReset() {
-  if (confirm('确定恢复为默认演示数据？当前所有数据将被覆盖。')) {
-    resetData()
-    notify('已恢复默认数据')
-  }
+  resetData()
+  confirmingReset.value = false
+  notify('已恢复默认数据')
 }
 </script>
 
@@ -108,7 +109,17 @@ function doReset() {
     <section class="sec">
       <h4>恢复默认</h4>
       <p class="hint">清除当前数据，恢复为内置的演示数据。</p>
-      <button class="btn btn-danger" type="button" @click="doReset">恢复默认演示数据</button>
+      <button v-if="!confirmingReset" class="btn btn-danger" type="button" @click="confirmingReset = true">恢复默认演示数据</button>
+      <ConfirmCard
+        v-else
+        class="reset-confirm"
+        confirm-text="确认恢复"
+        danger
+        @confirm="doReset"
+        @cancel="confirmingReset = false"
+      >
+        确定恢复为默认演示数据？当前所有数据将被覆盖。
+      </ConfirmCard>
     </section>
   </Modal>
 </template>
@@ -188,5 +199,9 @@ function doReset() {
 
 textarea.field-input {
   margin-bottom: var(--sp-3);
+}
+
+.reset-confirm {
+  margin-top: var(--sp-1);
 }
 </style>

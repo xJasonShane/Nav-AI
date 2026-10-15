@@ -70,6 +70,60 @@ function defaultData() {
   }
 }
 
+/**
+ * 归一化外部数据（localStorage 回读 / 导入文件）：
+ * 补齐字段与默认值、剔除非法节点、保证 id 唯一（缺失或重复时重新生成）、
+ * 把指向不存在分类的站点归入「未分类」、分类树截断为最多两级。
+ * @returns {{ settings: object, categories: object[], sites: object[], moved: number }} moved = 因分类失效被归入「未分类」的站点数
+ */
+export function normalizeData(input) {
+  const catIds = new Set()
+  const siteIds = new Set()
+
+  const cleanCategory = (raw, depth) => {
+    if (!raw || typeof raw !== 'object') return null
+    const name = typeof raw.name === 'string' ? raw.name.trim() : ''
+    if (!name) return null
+    const id = typeof raw.id === 'string' && raw.id && !catIds.has(raw.id) ? raw.id : uid()
+    catIds.add(id)
+    const node = { id, name, icon: typeof raw.icon === 'string' ? raw.icon : '', children: [] }
+    if (depth < 2 && Array.isArray(raw.children)) {
+      node.children = raw.children.map((child) => cleanCategory(child, depth + 1)).filter(Boolean)
+    }
+    return node
+  }
+
+  const rawCategories = Array.isArray(input?.categories) ? input.categories : []
+  const categories = rawCategories.map((cat) => cleanCategory(cat, 1)).filter(Boolean)
+
+  let moved = 0
+  const rawSites = Array.isArray(input?.sites) ? input.sites : []
+  const sites = rawSites
+    .filter((s) => s && typeof s === 'object' && typeof s.name === 'string' && s.name.trim())
+    .map((s) => {
+      const id = typeof s.id === 'string' && s.id && !siteIds.has(s.id) ? s.id : uid()
+      siteIds.add(id)
+      const valid = typeof s.categoryId === 'string' && catIds.has(s.categoryId)
+      if (s.categoryId && !valid) moved += 1
+      return {
+        id,
+        name: s.name.trim(),
+        url: typeof s.url === 'string' ? s.url : '',
+        desc: typeof s.desc === 'string' ? s.desc : '',
+        icon: typeof s.icon === 'string' ? s.icon : '',
+        categoryId: valid ? s.categoryId : null,
+      }
+    })
+
+  const rawSettings = input?.settings && typeof input.settings === 'object' ? input.settings : {}
+  const settings = {
+    title: typeof rawSettings.title === 'string' && rawSettings.title.trim() ? rawSettings.title.trim() : 'Nav-AI',
+    theme: ['auto', 'light', 'dark'].includes(rawSettings.theme) ? rawSettings.theme : 'auto',
+  }
+
+  return { settings, categories, sites, moved }
+}
+
 /** 把损坏的原始内容另存到旁路键，尽量保住可人工恢复的现场 */
 function backupRaw(raw) {
   try { localStorage.setItem(BACKUP_KEY, raw) } catch (e) { /* 空间不足时放弃备份 */ }
@@ -80,8 +134,13 @@ function load() {
   try {
     raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
-      const data = JSON.parse(raw)
-      if (data && Array.isArray(data.categories) && Array.isArray(data.sites)) return data
+      const parsed = JSON.parse(raw)
+      if (parsed && Array.isArray(parsed.categories) && Array.isArray(parsed.sites)) {
+        // 加载期自愈：历史数据里的悬空分类会被归入「未分类」
+        const { settings, categories, sites, moved } = normalizeData(parsed)
+        if (moved) loadWarning.value = `检测到 ${moved} 个站点的所属分类已失效，已归入「未分类」。`
+        return { version: parsed.version || 1, settings, categories, sites }
+      }
       backupRaw(raw)
       loadWarning.value = `本地数据结构异常，已回退为默认示例数据；原内容已备份到 localStorage 的「${BACKUP_KEY}」。`
     }
@@ -96,12 +155,18 @@ function load() {
 
 export const store = reactive(load())
 
+let lastPersisted = ''
+
 // 数据变化时自动持久化（immediate 确保首次加载即写入当前存储键）
 watch(
   store,
   (val) => {
+    const json = JSON.stringify(val)
+    // 内容未变（例如刚由其它标签页同步过来）时跳过写回，避免多余的存储事件与写回回环
+    if (json === lastPersisted) return
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(val))
+      localStorage.setItem(STORAGE_KEY, json)
+      lastPersisted = json
       if (storageWarning.value) storageWarning.value = '' // 写入恢复正常后清除提示
     } catch (e) {
       storageWarning.value = '数据保存失败：浏览器存储空间不足或已被禁用，最近的修改可能无法保留，请尽快导出备份。'
@@ -109,6 +174,29 @@ watch(
   },
   { deep: true, immediate: true }
 )
+
+/**
+ * 多标签页同步：应用其它标签页写入的数据。
+ * 内容一致时直接返回 false（既避免无意义的重渲染，也杜绝两个标签页互相写回的回环）。
+ */
+export function applyExternalData(json) {
+  try {
+    const parsed = JSON.parse(json)
+    const { settings, categories, sites } = normalizeData(parsed)
+    const next = { version: parsed?.version || 1, settings, categories, sites }
+    if (JSON.stringify(next) === JSON.stringify(store)) return false
+    Object.assign(store, next)
+    return true
+  } catch (e) {
+    return false
+  }
+}
+
+if (typeof window !== 'undefined' && window.addEventListener) {
+  window.addEventListener('storage', (e) => {
+    if (e.key === STORAGE_KEY && e.newValue) applyExternalData(e.newValue)
+  })
+}
 
 /* ---------------- 分类树操作 ---------------- */
 
@@ -120,15 +208,37 @@ export function walkCategories(list = store.categories, fn, parent = null) {
   }
 }
 
-/** 按 id 查找分类节点，返回 { node, parent, list, index } */
-export function findCategory(id, list = store.categories, parent = null) {
-  for (let i = 0; i < list.length; i++) {
-    if (list[i].id === id) return { node: list[i], parent, list, index: i }
-    const hit = list[i].children?.length && findCategory(id, list[i].children, list[i])
-    if (hit) return hit
+/* ---------------- 派生索引（一次遍历，查询 O(1)） ---------------- */
+
+/** 分类 id → { node, parent, list, index }：供查找、校验与同级排序共用 */
+export const categoryIndex = computed(() => {
+  const map = new Map()
+  const walk = (list, parent) => {
+    list.forEach((node, index) => {
+      map.set(node.id, { node, parent, list, index })
+      if (node.children?.length) walk(node.children, node)
+    })
   }
-  return null
+  walk(store.categories, null)
+  return map
+})
+
+/** 按 id 查找分类节点，返回 { node, parent, list, index }；不存在返回 null */
+export function findCategory(id) {
+  return (id && categoryIndex.value.get(id)) || null
 }
+
+/** 分类 id → 站点列表（键为 null 表示「未分类」），避免按分类逐次全量过滤 */
+export const sitesByCategory = computed(() => {
+  const map = new Map()
+  for (const site of store.sites) {
+    const key = site.categoryId || null
+    const bucket = map.get(key)
+    if (bucket) bucket.push(site)
+    else map.set(key, [site])
+  }
+  return map
+})
 
 /** 添加分类（parentId 为 null 时为顶级分类；最多两级） */
 export function addCategory(name, icon = '', parentId = null) {
@@ -194,9 +304,9 @@ export function removeSite(id) {
   if (i !== -1) store.sites.splice(i, 1)
 }
 
-/** 某分类下的站点（不含子分类） */
+/** 某分类下的站点（不含子分类），数据来自派生索引 */
 export function sitesOf(categoryId) {
-  return store.sites.filter((s) => (s.categoryId || null) === (categoryId || null))
+  return sitesByCategory.value.get(categoryId || null) || []
 }
 
 /* ---------------- 数据导入 / 导出 ---------------- */
@@ -205,13 +315,18 @@ export function exportJSON() {
   return JSON.stringify({ version: 1, ...JSON.parse(JSON.stringify(store)) }, null, 2)
 }
 
+/**
+ * 导入数据：先归一化（补字段 / 去非法节点 / 失效分类归入「未分类」），再整体替换。
+ * @returns {{ categories: number, sites: number, moved: number }} 导入结果，供界面提示
+ */
 export function importJSON(text) {
-  const data = JSON.parse(text)
-  if (!data || !Array.isArray(data.categories) || !Array.isArray(data.sites)) {
+  const parsed = JSON.parse(text)
+  if (!parsed || !Array.isArray(parsed.categories) || !Array.isArray(parsed.sites)) {
     throw new Error('数据格式不正确：缺少 categories 或 sites 字段')
   }
-  data.settings = data.settings || { title: 'Nav-AI', theme: 'auto' }
-  Object.assign(store, data)
+  const { settings, categories, sites, moved } = normalizeData(parsed)
+  Object.assign(store, { version: 1, settings, categories, sites })
+  return { categories: categories.length, sites: sites.length, moved }
 }
 
 export function resetData() {

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { lockScroll, unlockScroll } from '../utils/scroll-lock.js'
+import Icon from './Icon.vue'
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -74,9 +75,7 @@ onBeforeUnmount(() => {
         <header class="modal-head">
           <h3>{{ title }}</h3>
           <button class="icon-btn" type="button" aria-label="关闭" @click="emit('close')">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
+            <Icon name="close" :size="16" :stroke="2.2" />
           </button>
         </header>
         <div class="modal-body">
@@ -103,6 +102,8 @@ onBeforeUnmount(() => {
   padding: calc(env(safe-area-inset-top, 0px) + 8vh) var(--sp-4)
     calc(env(safe-area-inset-bottom, 0px) + var(--sp-4));
   overflow-y: auto;
+  /* 弹窗内滚动到边界时不把滚动传递给背后的页面（配合滚动锁，移动端更稳） */
+  overscroll-behavior: contain;
 }
 
 .modal-box {

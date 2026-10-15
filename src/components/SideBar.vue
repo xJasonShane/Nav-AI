@@ -2,6 +2,7 @@
 import { computed, watch, onBeforeUnmount } from 'vue'
 import { store, sitesOf } from '../store/data.js'
 import { lockScroll, unlockScroll } from '../utils/scroll-lock.js'
+import Icon from './Icon.vue'
 
 const props = defineProps({
   selectedId: { type: String, default: null },
@@ -69,9 +70,7 @@ function pick(id) {
     <div class="drawer-head">
       <span class="drawer-title">分类导航</span>
       <button class="icon-btn" type="button" aria-label="关闭菜单" @click="emit('close')">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-          <path d="M18 6 6 18M6 6l12 12" />
-        </svg>
+        <Icon name="close" :size="16" :stroke="2.2" />
       </button>
     </div>
 
@@ -135,6 +134,8 @@ function pick(id) {
   padding: var(--sp-3) var(--sp-2) var(--sp-3) calc(var(--sp-2) + env(safe-area-inset-left, 0px));
   gap: var(--sp-3);
   overflow-y: auto;
+  /* 抽屉内滚动到边界时不带动背后页面 */
+  overscroll-behavior: contain;
 }
 
 .drawer-head {
@@ -220,7 +221,6 @@ function pick(id) {
 .drawer-mask {
   display: none;
 }
-
 @media (max-width: 768px) {
   .sidebar {
     position: fixed;
@@ -267,6 +267,8 @@ function pick(id) {
     opacity: 0;
     pointer-events: none;
     transition: opacity var(--dur-2) var(--ease-out);
+    /* 遮罩不接受滚动手势：避免拖拽遮罩时带动背后页面（iOS 上 overflow 锁定不完全可靠） */
+    touch-action: none;
   }
 
   .drawer-mask.show {

@@ -1,7 +1,9 @@
 <script setup>
 import { reactive, ref } from 'vue'
 import Modal from './Modal.vue'
-import { store, addCategory, renameCategory, removeCategory, moveCategory } from '../store/data.js'
+import ConfirmCard from './ConfirmCard.vue'
+import Icon from './Icon.vue'
+import { store, sitesOf, addCategory, renameCategory, removeCategory, moveCategory } from '../store/data.js'
 
 const emit = defineEmits(['close'])
 
@@ -78,8 +80,8 @@ function confirmDelete() {
   pendingDelete.value = null
 }
 
-function move(node, dir, parentId) {
-  // moveCategory 需要 id 在同级列表中的位置，直接复用数据层
+function move(node, dir) {
+  // moveCategory 需要 id 在同级列表中的位置，直接复用数据层索引
   moveCategory(node.id, dir)
 }
 </script>
@@ -94,14 +96,10 @@ function move(node, dir, parentId) {
             <input v-model="renameForm.icon" class="field-input icon-input" type="text" placeholder="图标" aria-label="分类图标" maxlength="2" />
             <input v-model="renameForm.name" class="field-input name-input" type="text" placeholder="分类名称" aria-label="分类名称" @keyup.enter="saveRename(cat.id)" />
             <button class="icon-btn-sm op ok" type="button" title="保存" aria-label="保存" @click="saveRename(cat.id)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M20 6 9 17l-5-5" />
-              </svg>
+              <Icon name="check" />
             </button>
             <button class="icon-btn-sm op" type="button" title="取消" aria-label="取消" @click="renaming = null">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-                <path d="M18 6 6 18M6 6l12 12" />
-              </svg>
+              <Icon name="close" />
             </button>
           </template>
           <template v-else>
@@ -110,29 +108,19 @@ function move(node, dir, parentId) {
             <span class="cat-count">{{ cat.children.length }} 个子分类</span>
             <span class="row-ops">
               <button class="icon-btn-sm op" type="button" title="上移" aria-label="上移" :disabled="i === 0" @click="move(cat, -1)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M12 19V5M5 12l7-7 7 7" />
-                </svg>
+                <Icon name="up" />
               </button>
               <button class="icon-btn-sm op" type="button" title="下移" aria-label="下移" :disabled="i === store.categories.length - 1" @click="move(cat, 1)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M12 5v14M19 12l-7 7-7-7" />
-                </svg>
+                <Icon name="down" />
               </button>
               <button class="icon-btn-sm op" type="button" title="添加子分类" aria-label="添加子分类" @click="openChildForm(cat.id)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-                  <path d="M12 5v14M5 12h14" />
-                </svg>
+                <Icon name="plus" />
               </button>
               <button class="icon-btn-sm op" type="button" title="重命名" aria-label="重命名" @click="startRename(cat)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                </svg>
+                <Icon name="edit" />
               </button>
               <button class="icon-btn-sm op danger" type="button" title="删除" aria-label="删除" @click="askDelete(cat)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                </svg>
+                <Icon name="trash" />
               </button>
             </span>
           </template>
@@ -145,40 +133,28 @@ function move(node, dir, parentId) {
               <input v-model="renameForm.icon" class="field-input icon-input" type="text" placeholder="图标" aria-label="子分类图标" maxlength="2" />
               <input v-model="renameForm.name" class="field-input name-input" type="text" placeholder="子分类名称" aria-label="子分类名称" @keyup.enter="saveRename(child.id)" />
               <button class="icon-btn-sm op ok" type="button" title="保存" aria-label="保存" @click="saveRename(child.id)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M20 6 9 17l-5-5" />
-                </svg>
+                <Icon name="check" />
               </button>
               <button class="icon-btn-sm op" type="button" title="取消" aria-label="取消" @click="renaming = null">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-                  <path d="M18 6 6 18M6 6l12 12" />
-                </svg>
+                <Icon name="close" />
               </button>
             </template>
             <template v-else>
               <span class="cat-icon" aria-hidden="true">{{ child.icon || '📂' }}</span>
               <span class="cat-name">{{ child.name }}</span>
-              <span class="cat-count">{{ store.sites.filter((s) => s.categoryId === child.id).length }} 个站点</span>
+              <span class="cat-count">{{ sitesOf(child.id).length }} 个站点</span>
               <span class="row-ops">
                 <button class="icon-btn-sm op" type="button" title="上移" aria-label="上移" :disabled="j === 0" @click="move(child, -1)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M12 19V5M5 12l7-7 7 7" />
-                  </svg>
+                  <Icon name="up" />
                 </button>
                 <button class="icon-btn-sm op" type="button" title="下移" aria-label="下移" :disabled="j === cat.children.length - 1" @click="move(child, 1)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M12 5v14M19 12l-7 7-7-7" />
-                  </svg>
+                  <Icon name="down" />
                 </button>
                 <button class="icon-btn-sm op" type="button" title="重命名" aria-label="重命名" @click="startRename(child)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                  </svg>
+                  <Icon name="edit" />
                 </button>
                 <button class="icon-btn-sm op danger" type="button" title="删除" aria-label="删除" @click="askDelete(child)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                  </svg>
+                  <Icon name="trash" />
                 </button>
               </span>
             </template>
@@ -189,14 +165,10 @@ function move(node, dir, parentId) {
             <input v-model="childForm.icon" class="field-input icon-input" type="text" placeholder="图标" aria-label="子分类图标" maxlength="2" data-autofocus />
             <input v-model="childForm.name" class="field-input name-input" type="text" placeholder="子分类名称" aria-label="子分类名称" @keyup.enter="saveChild" />
             <button class="icon-btn-sm op ok" type="button" title="确定" aria-label="确定" @click="saveChild">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M20 6 9 17l-5-5" />
-              </svg>
+              <Icon name="check" />
             </button>
             <button class="icon-btn-sm op" type="button" title="取消" aria-label="取消" @click="addingChildOf = null">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-                <path d="M18 6 6 18M6 6l12 12" />
-              </svg>
+              <Icon name="close" />
             </button>
           </div>
         </div>
@@ -210,37 +182,32 @@ function move(node, dir, parentId) {
         <input v-model="topForm.icon" class="field-input icon-input" type="text" placeholder="图标" aria-label="分类图标" maxlength="2" />
         <input v-model="topForm.name" class="field-input name-input" type="text" placeholder="分类名称" aria-label="分类名称" @keyup.enter="saveTop" />
         <button class="icon-btn-sm op ok" type="button" title="确定" aria-label="确定" @click="saveTop">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M20 6 9 17l-5-5" />
-          </svg>
+          <Icon name="check" />
         </button>
         <button class="icon-btn-sm op" type="button" title="取消" aria-label="取消" @click="showTopForm = false">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-            <path d="M18 6 6 18M6 6l12 12" />
-          </svg>
+          <Icon name="close" />
         </button>
       </div>
 
       <button class="btn-dashed add-btn" type="button" @click="showTopForm = true; renaming = null; addingChildOf = null">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
-          <path d="M12 5v14M5 12h14" />
-        </svg>
+        <Icon name="plus" :stroke="2.2" />
         添加分类
       </button>
     </div>
 
-    <!-- 删除确认 -->
-    <div v-if="pendingDelete" class="confirm">
-      <p>
-        确定删除「{{ pendingDelete.icon }} {{ pendingDelete.name }}」？
-        <template v-if="deleteInfo.subs">该分类包含 {{ deleteInfo.subs }} 个子分类，将一并删除。</template>
-        <template v-if="deleteInfo.sites">其中 {{ deleteInfo.sites }} 个站点将移入「未分类」。</template>
-      </p>
-      <div class="confirm-ops">
-        <button class="btn btn-ghost" type="button" @click="pendingDelete = null">取消</button>
-        <button class="btn btn-danger-solid" type="button" @click="confirmDelete">确认删除</button>
-      </div>
-    </div>
+    <!-- 删除确认（统一确认卡） -->
+    <ConfirmCard
+      v-if="pendingDelete"
+      class="cat-confirm"
+      confirm-text="确认删除"
+      danger
+      @confirm="confirmDelete"
+      @cancel="pendingDelete = null"
+    >
+      确定删除「{{ pendingDelete.icon }} {{ pendingDelete.name }}」？
+      <template v-if="deleteInfo.subs">该分类包含 {{ deleteInfo.subs }} 个子分类，将一并删除。</template>
+      <template v-if="deleteInfo.sites">其中 {{ deleteInfo.sites }} 个站点将移入「未分类」。</template>
+    </ConfirmCard>
 
     <template #footer>
       <span class="tip">提示：站点必须挂在某个分类下，删除分类后其站点会移入「未分类」</span>
@@ -357,25 +324,8 @@ function move(node, dir, parentId) {
   padding: var(--sp-3) 0;
 }
 
-.confirm {
+.cat-confirm {
   margin-top: var(--sp-4);
-  padding: var(--sp-4);
-  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border));
-  background: color-mix(in srgb, var(--danger) 6%, var(--surface));
-  border-radius: var(--radius-sm);
-}
-
-.confirm p {
-  font-size: var(--fs-sm);
-  color: var(--text-2);
-  line-height: var(--lh-relaxed);
-}
-
-.confirm-ops {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--sp-2);
-  margin-top: var(--sp-3);
 }
 
 .tip {

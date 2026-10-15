@@ -6,18 +6,29 @@ import SiteCard from './components/SiteCard.vue'
 import SiteModal from './components/SiteModal.vue'
 import CategoryModal from './components/CategoryModal.vue'
 import DataModal from './components/DataModal.vue'
-import { store, sitesOf, removeSite, storageNotice, clearStorageNotice } from './store/data.js'
+import Modal from './components/Modal.vue'
+import ConfirmCard from './components/ConfirmCard.vue'
+import EmptyState from './components/EmptyState.vue'
+import Icon from './components/Icon.vue'
+import { store, sitesOf, findCategory, removeSite, storageNotice, clearStorageNotice } from './store/data.js'
 
 /* ------- 视图状态 ------- */
 const selectedId = ref(null) // null=全部 | 分类id | 'uncategorized'
 const query = ref('')
 const admin = ref(false)
 const sidebarOpen = ref(false)
+const mainRef = ref(null)
 
 /* ------- 弹窗状态 ------- */
 const siteModal = ref(null) // { site, categoryId } | null
 const showCategoryModal = ref(false)
 const showDataModal = ref(false)
+const pendingSite = ref(null) // 待确认删除的站点
+
+/** 跳到主内容（skip link）：聚焦主区而不改变 URL */
+function focusMain() {
+  mainRef.value?.focus()
+}
 
 const searching = computed(() => query.value.trim().length > 0)
 
@@ -37,7 +48,7 @@ const groups = computed(() => {
     return [{ key: 'uncat', title: '未分类', icon: '📥', sites: sitesOf(null), children: [] }]
   }
   if (selectedId.value) {
-    const cat = findCat(selectedId.value)
+    const cat = findCategory(selectedId.value)?.node
     if (!cat) return []
     return [
       {
@@ -77,7 +88,7 @@ watch(
   () => store.categories,
   () => {
     const id = selectedId.value
-    if (id !== null && id !== 'uncategorized' && !findCat(id)) selectedId.value = null
+    if (id !== null && id !== 'uncategorized' && !findCategory(id)) selectedId.value = null
   },
   { deep: true }
 )
@@ -86,7 +97,7 @@ const selectedTitle = computed(() => {
   if (searching.value) return `搜索结果（${searchResults.value.length}）`
   if (selectedId.value === null) return '全部分类'
   if (selectedId.value === 'uncategorized') return '未分类'
-  return findCat(selectedId.value)?.name || ''
+  return findCategory(selectedId.value)?.node?.name || ''
 })
 
 function selectCategory(id) {
@@ -94,14 +105,24 @@ function selectCategory(id) {
   query.value = ''
 }
 
-/** 删除站点（带确认） */
+/** 删除站点：走统一确认卡（内嵌确认，替换原生 confirm） */
 function deleteSite(site) {
-  if (confirm(`确定删除站点「${site.name}」？`)) removeSite(site.id)
+  pendingSite.value = site
+}
+
+function confirmDeleteSite() {
+  if (pendingSite.value) removeSite(pendingSite.value.id)
+  pendingSite.value = null
 }
 
 /** 任一浮层（弹窗或移动端抽屉）打开时，全局快捷键让位给浮层 */
 const overlayOpen = computed(
-  () => sidebarOpen.value || !!siteModal.value || showCategoryModal.value || showDataModal.value
+  () =>
+    sidebarOpen.value ||
+    !!siteModal.value ||
+    showCategoryModal.value ||
+    showDataModal.value ||
+    !!pendingSite.value
 )
 
 /** "/" 聚焦搜索框；Esc 清空搜索（对齐使用文档） */
@@ -125,6 +146,9 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
 </script>
 
 <template>
+  <!-- 键盘用户跳过顶栏直达主内容 -->
+  <a class="skip-link" href="#main" @click.prevent="focusMain">跳到主内容</a>
+
   <!-- 品牌氛围光背景 -->
   <div class="bg-decor" aria-hidden="true">
     <i class="glow g1"></i>
@@ -147,9 +171,7 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
     </svg>
     <span>{{ storageNotice }}</span>
     <button class="icon-btn-sm notice-close" type="button" aria-label="关闭提示" @click="clearStorageNotice">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
-        <path d="M18 6 6 18M6 6l12 12" />
-      </svg>
+      <Icon name="close" />
     </button>
   </div>
 
@@ -162,14 +184,16 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
       @close="sidebarOpen = false"
     />
 
-    <main class="main">
+    <main ref="mainRef" id="main" class="main" tabindex="-1">
       <!-- 空状态 -->
-      <div v-if="isEmpty" class="empty-state">
-        <div class="empty-logo" aria-hidden="true">🧭</div>
-        <h2 class="empty-title">欢迎使用 Nav-AI</h2>
-        <p class="empty-desc">这是你的专属导航站。点击右下角「＋」或开启「管理」模式添加你的第一个站点吧。</p>
+      <EmptyState
+        v-if="isEmpty"
+        icon="🧭"
+        title="欢迎使用 Nav-AI"
+        desc="这是你的专属导航站。点击右下角「＋」或开启「管理」模式添加你的第一个站点吧。"
+      >
         <button class="btn btn-primary" type="button" @click="admin = true; siteModal = { site: null, categoryId: null }">添加第一个站点</button>
-      </div>
+      </EmptyState>
 
       <!-- 搜索结果 -->
       <template v-else-if="searching">
@@ -177,10 +201,7 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
         <div v-if="searchResults.length" class="grid">
           <SiteCard v-for="s in searchResults" :key="s.id" :site="s" :admin="admin" @edit="siteModal = { site: s, categoryId: null }" @remove="deleteSite(s)" />
         </div>
-        <div v-else class="empty-state small">
-          <div class="empty-logo" aria-hidden="true">🔍</div>
-          <p class="empty-desc">没有找到与「{{ query }}」匹配的站点</p>
-        </div>
+        <EmptyState v-else icon="🔍" :desc="`没有找到与「${query}」匹配的站点`" />
       </template>
 
       <!-- 分类视图 -->
@@ -188,9 +209,7 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
         <div class="view-head">
           <h1 class="section-title">{{ selectedTitle }}</h1>
           <button v-if="admin" class="btn btn-ghost add-site-btn" type="button" @click="siteModal = { site: null, categoryId: selectedId === 'uncategorized' ? null : selectedId }">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
+            <Icon name="plus" :stroke="2.2" />
             添加站点
           </button>
         </div>
@@ -202,9 +221,7 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
                 <span class="g-icon">{{ g.icon }}</span>{{ g.title }}
                 <span class="badge">{{ g.sites.length + g.children.reduce((n, c) => n + c.sites.length, 0) }}</span>
                 <button v-if="admin" class="g-add" type="button" title="添加站点到该分类" aria-label="添加站点到该分类" @click="siteModal = { site: null, categoryId: g.key }">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
-                    <path d="M12 5v14M5 12h14" />
-                  </svg>
+                  <Icon name="plus" :stroke="2.2" />
                 </button>
               </h2>
             </template>
@@ -212,9 +229,7 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
             <div v-if="g.sites.length || admin" class="grid">
               <SiteCard v-for="s in g.sites" :key="s.id" :site="s" :admin="admin" @edit="siteModal = { site: s, categoryId: null }" @remove="deleteSite(s)" />
               <button v-if="admin && g.key !== 'uncat'" class="add-card btn-dashed" type="button" @click="siteModal = { site: null, categoryId: g.key }">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
-                  <path d="M12 5v14M5 12h14" />
-                </svg>
+                <Icon name="plus" :stroke="2.2" />
                 添加站点
               </button>
             </div>
@@ -224,9 +239,7 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
                 <span class="g-icon">{{ child.icon }}</span>{{ child.title }}
                 <span class="badge">{{ child.sites.length }}</span>
                 <button v-if="admin" class="g-add" type="button" title="添加站点到该子分类" aria-label="添加站点到该子分类" @click="siteModal = { site: null, categoryId: child.key }">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
-                    <path d="M12 5v14M5 12h14" />
-                  </svg>
+                  <Icon name="plus" :stroke="2.2" />
                 </button>
               </h3>
               <div v-if="child.sites.length" class="grid">
@@ -236,27 +249,30 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
           </section>
         </template>
 
-        <div v-else-if="selectedId !== null" class="empty-state small">
-          <div class="empty-logo" aria-hidden="true">📭</div>
-          <p class="empty-desc">该分类下还没有站点</p>
+        <EmptyState v-else-if="selectedId !== null" icon="📭" desc="该分类下还没有站点">
           <button v-if="admin" class="btn btn-primary" type="button" @click="siteModal = { site: null, categoryId: selectedId === 'uncategorized' ? null : selectedId }">添加站点</button>
           <button v-else class="btn btn-ghost" type="button" @click="admin = true">开启管理模式去添加</button>
-        </div>
+        </EmptyState>
       </template>
     </main>
   </div>
 
   <!-- 悬浮添加按钮（管理模式 + 移动端友好） -->
   <button v-if="admin && !searching" class="fab" type="button" title="添加站点" aria-label="添加站点" @click="siteModal = { site: null, categoryId: null }">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-      <path d="M12 5v14M5 12h14" />
-    </svg>
+    <Icon name="plus" :size="22" :stroke="2.2" />
   </button>
 
   <!-- 弹窗 -->
   <SiteModal v-if="siteModal" :site="siteModal.site" :category-id="siteModal.categoryId" @close="siteModal = null" />
   <CategoryModal v-if="showCategoryModal" @close="showCategoryModal = false" />
   <DataModal v-if="showDataModal" @close="showDataModal = false" />
+
+  <!-- 删除站点确认（统一确认卡） -->
+  <Modal v-if="pendingSite" title="删除站点" :width="400" @close="pendingSite = null">
+    <ConfirmCard confirm-text="确认删除" danger @confirm="confirmDeleteSite" @cancel="pendingSite = null">
+      确定删除站点「{{ pendingSite.name }}」？该操作不可撤销。
+    </ConfirmCard>
+  </Modal>
 </template>
 
 <style scoped>
@@ -442,56 +458,26 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
   color: var(--text-2);
 }
 
-/* 空状态（统一模式：装饰图标 / 标题 / 说明 / 操作） */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: var(--sp-3);
-  padding: 72px var(--sp-5) var(--sp-6);
-}
-
-.empty-state.small {
-  padding: var(--sp-8) var(--sp-5);
-  gap: var(--sp-2);
-}
-
-.empty-logo {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 64px;
-  height: 64px;
-  font-size: 32px;
-  line-height: 1;
+/* 跳到主内容：默认移出视口，仅在键盘聚焦时出现 */
+.skip-link {
+  position: fixed;
+  top: var(--sp-2);
+  left: var(--sp-2);
+  z-index: 120;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--shadow-md);
+  color: var(--accent);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  transform: translateY(calc(-100% - var(--sp-4)));
+  transition: transform var(--dur-2) var(--ease-out);
 }
 
-.empty-state.small .empty-logo {
-  width: 52px;
-  height: 52px;
-  font-size: 26px;
-}
-
-.empty-title {
-  font-size: var(--fs-2xl);
-  font-weight: var(--fw-bold);
-  line-height: var(--lh-tight);
-  background: var(--gradient);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-.empty-desc {
-  color: var(--text-2);
-  font-size: var(--fs-md);
-  line-height: var(--lh-relaxed);
-  max-width: 400px;
+.skip-link:focus-visible {
+  transform: translateY(0);
 }
 
 .fab {
@@ -551,12 +537,6 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
   .fab {
     right: calc(var(--sp-4) + env(safe-area-inset-right, 0px));
     bottom: calc(var(--sp-4) + env(safe-area-inset-bottom, 0px));
-  }
-}
-
-@media (max-width: 480px) {
-  .empty-state {
-    padding: var(--sp-8) var(--sp-4) var(--sp-5);
   }
 }
 </style>

@@ -9,6 +9,8 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  /* 始终为滚动条留位：弹窗/抽屉锁定滚动时页面不再横向跳动 */
+  scrollbar-gutter: stable;
 }
 
 body {

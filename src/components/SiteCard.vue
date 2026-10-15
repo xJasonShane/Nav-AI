@@ -4,6 +4,7 @@
  * 结构：容器 + 整卡链接（stretched-link）+ 管理操作浮层，保证键盘可达
  */
 import { ref, computed, watch } from 'vue'
+import Icon from './Icon.vue'
 
 const props = defineProps({
   site: { type: Object, required: true },
@@ -94,14 +95,10 @@ function onImgError(e) {
 
     <span v-if="admin" class="ops">
       <button class="icon-btn-sm op" type="button" aria-label="编辑站点" title="编辑" @click="$emit('edit')">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-        </svg>
+        <Icon name="edit" />
       </button>
       <button class="icon-btn-sm op danger" type="button" aria-label="删除站点" title="删除" @click="$emit('remove')">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-        </svg>
+        <Icon name="trash" />
       </button>
     </span>
   </article>

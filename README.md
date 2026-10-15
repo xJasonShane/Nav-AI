@@ -8,13 +8,18 @@
 
 - **分类管理**：支持两级分类（顶级分类 / 子分类），可自定义名称、图标（emoji）、排序（上移/下移）
 - **站点管理**：添加、编辑、删除一步到位；卡片包含名称、图标、描述、链接
-- **智能图标**：站点图标地址留空时自动抓取目标网站 favicon，失败自动回退为彩色字母头像
-- **即时搜索**：按名称、描述、网址实时过滤，快捷键 `/` 聚焦搜索框
-- **明暗主题**：浅色 / 深色 / 跟随系统三态切换，无刷新闪烁
+- **站点排序**：排序模式下拖拽卡片调整顺序（拖到其它分组即移动分类），并提供 ↑↓ 按钮供键盘与触屏使用
+- **批量导入**：粘贴多行网址批量建条目；可直接导入浏览器导出的书签 HTML，按文件夹自动还原分类并去重
+- **命令面板式搜索**：按名称、描述、网址实时过滤，`/` 聚焦、`↑↓` 选择、`Enter` 打开
+- **智能图标**：图标可留空自动获取（默认先取站点自身 favicon，再走图标服务，全程 `no-referrer` 不回传来源），失败自动回退为彩色字母头像
+- **明暗主题与主色**：浅色 / 深色 / 跟随系统三态切换，无刷新闪烁；6 套主色预设一键切换，全站令牌自动跟随
+- **删除可撤销**：删除站点或整棵分类后 6 秒内可一键撤销
 - **数据备份**：一键导出 / 导入 JSON，支持跨设备迁移；可恢复默认演示数据
+- **数据自愈**：导入或历史数据中的失效分类会自动归入「未分类」并给出提示；存储写入失败会明确告警而不是静默丢弃
+- **多标签同步**：在多个标签页打开时自动保持一致
 - **响应式**：桌面端侧边栏布局，移动端抽屉式导航，触摸友好，适配安全区（刘海屏）
-- **无障碍**：键盘全程可达（卡片操作、弹窗焦点陷阱与焦点归还）、可见焦点环、对比度达 WCAG AA、支持 `prefers-reduced-motion`
-- **统一设计令牌**：色彩 / 字号 / 间距 / 圆角 / 阴影 / 动效全部走 CSS 变量，明暗主题一键切换
+- **无障碍**：键盘全程可达（卡片操作、弹窗焦点陷阱与焦点归还、跳过导航直达主内容）、可见焦点环、对比度达 WCAG AA、支持 `prefers-reduced-motion`
+- **统一设计令牌**：色彩 / 字号 / 间距 / 圆角 / 阴影 / 动效全部走 CSS 变量，明暗主题与主色一键切换
 
 ## 技术栈
 
@@ -32,12 +37,12 @@
 ## 构建产物体积
 
 ```
-dist/index.html                   1.66 kB │ gzip:  0.89 kB
-dist/assets/style-*.css          25.15 kB │ gzip:  5.27 kB
-dist/assets/index-*.js          115.80 kB │ gzip: 40.90 kB
+dist/index.html                   1.76 kB │ gzip:  0.91 kB
+dist/assets/style-*.css          30.10 kB │ gzip:  6.04 kB
+dist/assets/index-*.js          126.38 kB │ gzip: 45.65 kB
 ```
 
-全部资源 gzip 后约 **47 KB**，无外部字体/依赖请求，首屏秒开。
+全部资源 gzip 后约 **52 KB**，无外部字体/依赖请求，首屏秒开。`npm run check` 内置体积闸门（CSS ≤ 6 kB / JS ≤ 48 kB，gzip）与其它 7 项工程断言。
 
 ## 本地开发
 
@@ -53,7 +58,16 @@ npm run build
 
 # 本地预览构建产物（默认 http://localhost:4173）
 npm run preview
+
+# 数据层单元测试（Node 内置 runner，零依赖）
+npm test
+
+# 工程约束自检：设计令牌收口 / 品牌色 / v-html 与原生 confirm / 依赖白名单 /
+# 构建特性标志 / STORAGE_KEY 口径 / 图标集中维护 / 产物体积预算
+npm run check
 ```
+
+> 提交前建议执行 `npm run build && npm test && npm run check`。
 
 ## 部署到 Cloudflare Pages
 
@@ -105,32 +119,48 @@ wrangler pages deploy dist --project-name=nav-ai
 
 ```
 Nav-AI/
-├── index.html                  # 入口 HTML（含主题防闪烁脚本）
+├── index.html                  # 入口 HTML（含主题/主色防闪烁脚本）
 ├── package.json
 ├── vite.config.js
 ├── public/
 │   └── favicon.svg             # 站点图标
+├── scripts/
+│   └── check.mjs               # 工程约束自检（零依赖）
+├── tests/
+│   └── data.test.mjs           # 数据层单元测试（零依赖）
 ├── src/
-│   ├── main.js                 # 应用入口
-│   ├── style.css               # 全局样式与主题变量
+│   ├── main.js                 # 应用入口（应用外观 + 挂载）
+│   ├── style.css               # 全局样式、设计令牌与主色预设
 │   ├── store/
-│   │   └── data.js             # 数据层：分类树/站点 CRUD + localStorage 持久化
-│   ├── App.vue                 # 主布局与视图编排
+│   │   └── data.js             # 数据层：分类树/站点 CRUD、归一化、版本迁移、持久化
+│   ├── utils/
+│   │   ├── scroll-lock.js      # 滚动锁（引用计数）
+│   │   ├── toast.js            # 全局提示（含删除撤销）
+│   │   ├── drag.js             # 拖拽排序共享状态
+│   │   └── importers.js        # 批量添加 / 书签 HTML 解析
+│   ├── App.vue                 # 主布局、视图编排与全局快捷键
 │   └── components/
 │       ├── TopBar.vue          # 顶栏：品牌/搜索/主题/数据/管理模式
-│       ├── SideBar.vue         # 侧边栏：分类树导航（移动端抽屉）
-│       ├── SiteCard.vue        # 站点卡片：图标回退 + 管理操作
-│       ├── SiteModal.vue       # 站点添加/编辑表单
+│       ├── SideBar.vue         # 侧边栏：分类树导航（移动端抽屉）+ 分类管理/设置入口
+│       ├── SiteCard.vue        # 站点卡片：图标回退链、排序模式、管理操作
+│       ├── SiteModal.vue       # 站点添加（单个 / 批量）/ 编辑表单
 │       ├── CategoryModal.vue   # 分类管理（增删改/排序/子分类）
-│       ├── DataModal.vue       # 数据导入/导出/重置
-│       └── Modal.vue           # 通用弹窗外壳
+│       ├── DataModal.vue       # 数据导入导出 / 书签导入 / 恢复默认
+│       ├── SettingsModal.vue   # 设置：标题 / 主题 / 主色 / 图标源
+│       ├── Modal.vue           # 通用弹窗外壳（焦点陷阱/归还/滚动锁）
+│       ├── ConfirmCard.vue     # 统一确认卡（替代原生 confirm）
+│       ├── EmptyState.vue      # 统一空状态
+│       ├── Toast.vue           # 全局提示条
+│       └── Icon.vue            # 功能图标（内联 SVG 路径表）
 └── docs/
-    └── usage.md                # 功能使用说明
+    ├── usage.md                # 功能使用说明
+    └── ui-audit-and-plan.md    # UI 审计、改造计划与实施记录
 ```
 
 ## 数据说明
 
 - 所有数据存储在浏览器 `localStorage`，键名 `nav-ai-data-v1`，仅保存在当前浏览器中
-- 数据结构：`categories`（两级分类树）+ `sites`（站点集合）+ `settings`（标题与主题）
-- 换设备/换浏览器时，通过右上角「数据管理」导出 JSON，在新设备导入即可完整迁移
-- 修改站点标题：编辑 `src/store/data.js` 中的 `defaultData()`，或在已部署站点中修改后导出备份保留
+- 数据结构：`categories`（两级分类树）+ `sites`（站点集合）+ `settings`（标题、主题、主色、图标源）+ `version`（当前为 `2`）
+- 旧版本备份（`version: 1`）无需处理：加载与导入时会自动升级版本并补齐缺省字段，失效分类的站点会归入「未分类」并提示
+- 换设备/换浏览器时，通过右上角「数据管理」导出 JSON，在新设备导入即可完整迁移；也可以直接导入浏览器书签 HTML
+- 修改站点标题：点击侧边栏底部「设置」（或直接编辑 `src/store/data.js` 中的 `defaultData()`）

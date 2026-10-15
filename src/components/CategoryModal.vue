@@ -3,7 +3,16 @@ import { reactive, ref } from 'vue'
 import Modal from './Modal.vue'
 import ConfirmCard from './ConfirmCard.vue'
 import Icon from './Icon.vue'
-import { store, sitesOf, addCategory, renameCategory, removeCategory, moveCategory } from '../store/data.js'
+import {
+  store,
+  sitesOf,
+  addCategory,
+  renameCategory,
+  removeCategory,
+  restoreCategory,
+  moveCategory,
+} from '../store/data.js'
+import { showToast } from '../utils/toast.js'
 
 const emit = defineEmits(['close'])
 
@@ -75,9 +84,17 @@ function askDelete(node) {
   pendingDelete.value = node
 }
 
+/** 确认删除后提供 6 秒撤销窗口（分类与其下站点关系一并还原） */
 function confirmDelete() {
-  removeCategory(pendingDelete.value.id)
+  const node = pendingDelete.value
   pendingDelete.value = null
+  if (!node) return
+  const snapshot = removeCategory(node.id)
+  if (!snapshot) return
+  showToast(`已删除分类「${node.name}」`, {
+    label: '撤销',
+    run: () => restoreCategory(snapshot),
+  })
 }
 
 function move(node, dir) {
@@ -207,6 +224,7 @@ function move(node, dir) {
       确定删除「{{ pendingDelete.icon }} {{ pendingDelete.name }}」？
       <template v-if="deleteInfo.subs">该分类包含 {{ deleteInfo.subs }} 个子分类，将一并删除。</template>
       <template v-if="deleteInfo.sites">其中 {{ deleteInfo.sites }} 个站点将移入「未分类」。</template>
+      删除后 6 秒内可撤销。
     </ConfirmCard>
 
     <template #footer>

@@ -1,14 +1,22 @@
 <script setup>
 /**
- * 站点卡片：图标（favicon 自动获取 + 多级回退到字母头像）、名称、描述、域名
- * 结构：容器 + 整卡链接（stretched-link）+ 管理操作浮层，保证键盘可达
+ * 站点卡片：
+ *  - 图标：自定义图标 → 站点自身 /favicon.ico → 图标服务 → 字母头像（前两者的顺序随 settings.iconSource 调整）
+ *  - 结构：容器 + 整卡链接（stretched-link）+ 管理操作浮层，保证键盘可达
+ *  - 排序模式（order）：显示 ↑↓ 按钮并支持拖拽，跨分组拖拽即等于移动分类
  */
 import { ref, computed, watch } from 'vue'
 import Icon from './Icon.vue'
+import { store, sitesOf, moveSite, moveSiteRelative } from '../store/data.js'
+import { draggingId, dropTargetId, dropAfter, resetDrag } from '../utils/drag.js'
 
 const props = defineProps({
   site: { type: Object, required: true },
   admin: { type: Boolean, default: false },
+  /** 排序模式：卡片可拖拽，操作区换成 ↑↓ */
+  order: { type: Boolean, default: false },
+  /** 命令面板式搜索中的当前选中项 */
+  active: { type: Boolean, default: false },
 })
 
 defineEmits(['edit', 'remove'])
@@ -18,16 +26,8 @@ const PALETTE = ['#4f7cff', '#9b5cff', '#0ea5e9', '#f59e0b', '#10b981', '#ef4444
 
 const iconFailed = ref(false)
 const loaded = ref(false)
-
-// 站点被编辑（图标地址 / 网址变化）后重置图标状态：否则上一次的失败结果会被永久沿用，
-// 用户补填图标地址后仍只显示字母头像，必须刷新才恢复
-watch(
-  () => [props.site.icon, props.site.url],
-  () => {
-    iconFailed.value = false
-    loaded.value = false
-  }
-)
+/** 图标回退链当前级别 */
+const step = ref(0)
 
 const domain = computed(() => {
   try {
@@ -37,10 +37,29 @@ const domain = computed(() => {
   }
 })
 
-/** 自动 favicon 地址（icon 留空时使用） */
-const autoIcon = computed(() => (domain.value ? `https://favicon.im/${domain.value}?larger=true` : ''))
+/** 图标候选链：自定义图标优先；否则按设置决定「直连站点图标」与「第三方图标服务」的先后 */
+const sources = computed(() => {
+  if (props.site.icon) return [props.site.icon]
+  const d = domain.value
+  if (!d) return []
+  const direct = `https://${d}/favicon.ico`
+  const service = `https://favicon.im/${d}?larger=true`
+  return store.settings.iconSource === 'service' ? [service, direct] : [direct, service]
+})
 
-const showImg = computed(() => !iconFailed.value && (props.site.icon || autoIcon.value))
+const currentSrc = computed(() => sources.value[step.value] || '')
+const showImg = computed(() => !iconFailed.value && !!currentSrc.value)
+
+// 站点被编辑、或图标源设置变化后重置回退链：否则上一次的失败结果会被永久沿用，
+// 用户补填图标地址后仍只显示字母头像，必须刷新才恢复
+watch(
+  () => [props.site.icon, props.site.url, store.settings.iconSource],
+  () => {
+    step.value = 0
+    iconFailed.value = false
+    loaded.value = false
+  }
+)
 
 const initial = computed(() => (props.site.name || '?').trim().charAt(0).toUpperCase())
 
@@ -51,28 +70,67 @@ const avatarColor = computed(() => {
   return PALETTE[h % PALETTE.length]
 })
 
-function onImgError(e) {
-  const el = e.target
-  // 第一级回退：换 DuckDuckGo 图标服务
-  if (!el.dataset.fallback && domain.value) {
-    el.dataset.fallback = '1'
-    el.src = `https://icons.duckduckgo.com/ip3/${domain.value}.ico`
-  } else {
-    iconFailed.value = true
+function onImgError() {
+  if (step.value < sources.value.length - 1) step.value += 1
+  else iconFailed.value = true
+}
+
+/* ---------------- 排序模式：↑↓ 与拖拽 ---------------- */
+
+const siblings = computed(() => sitesOf(props.site.categoryId))
+const position = computed(() => siblings.value.findIndex((s) => s.id === props.site.id))
+const canMoveUp = computed(() => position.value > 0)
+const canMoveDown = computed(
+  () => position.value >= 0 && position.value < siblings.value.length - 1
+)
+
+const dragging = computed(() => draggingId.value === props.site.id)
+const isDropTarget = computed(
+  () => !!draggingId.value && draggingId.value !== props.site.id && dropTargetId.value === props.site.id
+)
+
+function onDragStart(e) {
+  if (!props.order) return
+  draggingId.value = props.site.id
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', props.site.id)
   }
+}
+
+function onDragOver(e) {
+  if (!props.order || !draggingId.value || draggingId.value === props.site.id) return
+  const rect = e.currentTarget.getBoundingClientRect()
+  dropAfter.value = e.clientX - rect.left > rect.width / 2
+  dropTargetId.value = props.site.id
+}
+
+function onDrop() {
+  if (!props.order || !draggingId.value) return
+  moveSiteRelative(draggingId.value, props.site.id, dropAfter.value)
+  resetDrag()
 }
 </script>
 
 <template>
-  <article class="card">
+  <article
+    class="card"
+    :class="{ 'is-active': active, dragging, 'drop-target': isDropTarget, 'drop-after': isDropTarget && dropAfter }"
+    :draggable="order ? 'true' : 'false'"
+    @dragstart="onDragStart"
+    @dragover.prevent="onDragOver"
+    @drop.prevent="onDrop"
+    @dragend="resetDrag"
+  >
     <span class="icon" aria-hidden="true">
       <img
         v-if="showImg"
-        :key="site.icon || autoIcon"
-        :src="site.icon || autoIcon"
+        :key="currentSrc"
+        :src="currentSrc"
         alt=""
         loading="lazy"
         decoding="async"
+        referrerpolicy="no-referrer"
         :class="{ loaded }"
         @load="loaded = true"
         @error="onImgError"
@@ -86,14 +144,39 @@ function onImgError(e) {
     </span>
 
     <a
+      v-if="!order"
       class="card-link"
       :href="site.url"
       target="_blank"
       rel="noopener noreferrer"
+      draggable="false"
       :aria-label="site.desc ? `${site.name}：${site.desc}` : site.name"
     ></a>
 
-    <span v-if="admin" class="ops">
+    <span v-if="order" class="ops order-ops">
+      <button
+        class="icon-btn-sm op"
+        type="button"
+        title="上移"
+        aria-label="上移"
+        :disabled="!canMoveUp"
+        @click="moveSite(site.id, -1)"
+      >
+        <Icon name="up" />
+      </button>
+      <button
+        class="icon-btn-sm op"
+        type="button"
+        title="下移"
+        aria-label="下移"
+        :disabled="!canMoveDown"
+        @click="moveSite(site.id, 1)"
+      >
+        <Icon name="down" />
+      </button>
+    </span>
+
+    <span v-else-if="admin" class="ops">
       <button class="icon-btn-sm op" type="button" aria-label="编辑站点" title="编辑" @click="$emit('edit')">
         <Icon name="edit" />
       </button>
@@ -115,7 +198,11 @@ function onImgError(e) {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-xs);
-  transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2), border-color var(--dur-2);
+  transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2), border-color var(--dur-2), opacity var(--dur-2);
+}
+
+.card[draggable='true'] {
+  cursor: grab;
 }
 
 .card:hover,
@@ -128,6 +215,42 @@ function onImgError(e) {
 .card:hover .name,
 .card:focus-within .name {
   color: var(--accent);
+}
+
+/* 命令面板式搜索的当前项 */
+.card.is-active {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.card.is-active .name {
+  color: var(--accent);
+}
+
+/* 拖拽中的卡片与落点指示 */
+.card.dragging {
+  opacity: 0.45;
+}
+
+.card.drop-target {
+  border-color: var(--accent);
+}
+
+.card.drop-target::before {
+  content: '';
+  position: absolute;
+  top: var(--sp-2);
+  bottom: var(--sp-2);
+  left: -3px;
+  width: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+.card.drop-target.drop-after::before {
+  left: auto;
+  right: -3px;
 }
 
 /* 整卡链接：覆盖卡片，保持“点击卡片打开新标签”的行为 */
@@ -244,13 +367,28 @@ function onImgError(e) {
   color: var(--accent);
 }
 
+.op:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.op:disabled:hover {
+  background: none;
+  color: var(--text-2);
+}
+
 .op.danger:hover {
   color: var(--danger);
 }
 
-/* 桌面端悬停/聚焦时显现操作；触摸设备常显 */
+/* 排序模式下 ↑↓ 常显（排序是显式进入的模式，不隐藏） */
+.order-ops {
+  opacity: 1;
+}
+
+/* 桌面端悬停/聚焦时显现操作；触摸设备常显；排序模式的 ↑↓ 始终可见 */
 @media (hover: hover) {
-  .ops {
+  .ops:not(.order-ops) {
     opacity: 0;
     pointer-events: none;
     transition: opacity var(--dur-1);

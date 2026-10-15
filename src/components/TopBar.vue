@@ -5,6 +5,10 @@ import { store, applyTheme } from '../store/data.js'
 const props = defineProps({
   query: { type: String, default: '' },
   admin: { type: Boolean, default: false },
+  /** 正在搜索（搜索结果列表已展开） */
+  searching: { type: Boolean, default: false },
+  /** 当前选中的搜索结果元素 id，配合搜索结果 listbox 使用 */
+  activeDescendant: { type: String, default: '' },
 })
 
 const emit = defineEmits(['update:query', 'open-data', 'toggle-admin', 'toggle-sidebar'])
@@ -54,9 +58,13 @@ const themeLabel = { auto: '跟随系统', light: '浅色模式', dark: '深色�
       </svg>
       <input
         type="search"
+        role="combobox"
         :value="query"
         placeholder="搜索站点名称、描述或网址…"
-        aria-label="搜索站点，按 / 键快速聚焦"
+        aria-label="搜索站点，按 / 键快速聚焦，↑↓ 选择，Enter 打开"
+        :aria-expanded="searching ? 'true' : 'false'"
+        :aria-controls="searching ? 'search-results' : undefined"
+        :aria-activedescendant="activeDescendant || undefined"
         @input="emit('update:query', $event.target.value)"
       />
       <kbd v-if="!query" aria-hidden="true">/</kbd>

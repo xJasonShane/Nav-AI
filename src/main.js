@@ -1,7 +1,7 @@
 import { createApp } from 'vue'
 import App from './App.vue'
-import { applyTheme } from './store/data.js'
+import { applyAppearance } from './store/data.js'
 import './style.css'
 
-applyTheme()
+applyAppearance()
 createApp(App).mount('#app')

@@ -1,7 +1,10 @@
 <script setup>
-import { reactive, computed } from 'vue'
+import { reactive, computed, ref } from 'vue'
 import Modal from './Modal.vue'
-import { addSite, updateSite, store, findCategory } from '../store/data.js'
+import Icon from './Icon.vue'
+import { addSite, updateSite, store, findCategory, importSites } from '../store/data.js'
+import { parseSiteLines } from '../utils/importers.js'
+import { showToast } from '../utils/toast.js'
 
 const props = defineProps({
   /** 编辑时传入站点对象，新建时传 null */
@@ -28,6 +31,11 @@ const form = reactive({
 })
 
 const error = reactive({ name: '', url: '' })
+
+/** 新建时可切换「单个 / 批量」：批量模式粘贴多行文本，按 URL 去重后一次性建条目 */
+const bulk = ref(false)
+const bulkText = ref('')
+const bulkError = ref('')
 
 /** 树形分类选项（缩进展示） */
 const options = computed(() => {
@@ -63,63 +71,35 @@ function submit() {
   else addSite(payload)
   emit('close')
 }
+
+/** 批量添加：解析文本 → 去重导入 → 关闭（结果由全局提示反馈） */
+function submitBulk() {
+  const entries = parseSiteLines(bulkText.value)
+  if (!entries.length) {
+    bulkError.value = '没有识别到有效网址，请检查每行格式'
+    return
+  }
+  const result = importSites(entries, form.categoryId || null)
+  emit('close')
+  const parts = [`已添加 ${result.added} 个站点`]
+  if (result.skipped) parts.push(`跳过 ${result.skipped} 个重复项`)
+  showToast(parts.join('，'))
+}
 </script>
 
 <template>
-  <Modal :title="isEdit ? '编辑站点' : '添加站点'" :width="440" @close="emit('close')">
-    <form class="form" @submit.prevent="submit">
-      <label class="field">
-        <span class="label">名称 <i aria-hidden="true">*</i></span>
-        <input
-          v-model="form.name"
-          class="field-input"
-          type="text"
-          placeholder="例如：GitHub"
-          :class="{ invalid: error.name }"
-          :aria-invalid="error.name ? 'true' : undefined"
-          :aria-describedby="error.name ? 'site-name-err' : undefined"
-          data-autofocus
-        />
-        <span v-if="error.name" id="site-name-err" class="err">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="9" />
-            <path d="M12 8v5m0 3.4h.01" />
-          </svg>
-          {{ error.name }}
-        </span>
-      </label>
+  <Modal :title="isEdit ? '编辑站点' : bulk ? '批量添加站点' : '添加站点'" :width="bulk ? 520 : 440" @close="emit('close')">
+    <div class="form">
+      <div v-if="!isEdit" class="seg" role="tablist" aria-label="添加方式">
+        <button class="seg-btn" type="button" role="tab" :aria-selected="!bulk" :class="{ active: !bulk }" @click="bulk = false">
+          单个添加
+        </button>
+        <button class="seg-btn" type="button" role="tab" :aria-selected="bulk" :class="{ active: bulk }" @click="bulk = true">
+          批量添加
+        </button>
+      </div>
 
-      <label class="field">
-        <span class="label">网址 <i aria-hidden="true">*</i></span>
-        <input
-          v-model="form.url"
-          class="field-input"
-          type="text"
-          inputmode="url"
-          placeholder="https://example.com（可省略 https://）"
-          :class="{ invalid: error.url }"
-          :aria-invalid="error.url ? 'true' : undefined"
-          :aria-describedby="error.url ? 'site-url-err' : undefined"
-        />
-        <span v-if="error.url" id="site-url-err" class="err">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="9" />
-            <path d="M12 8v5m0 3.4h.01" />
-          </svg>
-          {{ error.url }}
-        </span>
-      </label>
-
-      <label class="field">
-        <span class="label">描述</span>
-        <input v-model="form.desc" class="field-input" type="text" placeholder="一句话介绍该站点（可选）" maxlength="60" />
-      </label>
-
-      <label class="field">
-        <span class="label">图标地址</span>
-        <input v-model="form.icon" class="field-input" type="text" inputmode="url" placeholder="留空将自动获取站点图标" />
-      </label>
-
+      <!-- 分类选择：两种模式共用（批量模式作为统一目标分类） -->
       <label class="field">
         <span class="label">所属分类</span>
         <select v-model="form.categoryId" class="field-input">
@@ -127,39 +107,84 @@ function submit() {
           <option v-for="opt in options" :key="opt.id" :value="opt.id">{{ (opt.depth ? '　' : '') + opt.label }}</option>
         </select>
       </label>
-    </form>
+
+      <template v-if="bulk">
+        <label class="field">
+          <span class="label">站点列表</span>
+          <textarea
+            v-model="bulkText"
+            class="field-input"
+            rows="7"
+            aria-label="批量站点列表"
+            placeholder="每行一个站点，支持三种写法：&#10;https://github.com&#10;GitHub https://github.com&#10;掘金|https://juejin.cn"
+            data-autofocus
+            @input="bulkError = ''"
+          ></textarea>
+          <span v-if="bulkError" class="err" role="alert">{{ bulkError }}</span>
+          <span v-else class="hint">名称可省略（默认用域名）；网址重复的条目会自动跳过，方便反复粘贴整份清单。</span>
+        </label>
+      </template>
+
+      <template v-else>
+        <label class="field">
+          <span class="label">名称 <i aria-hidden="true">*</i></span>
+          <input
+            v-model="form.name"
+            class="field-input"
+            type="text"
+            placeholder="例如：GitHub"
+            :class="{ invalid: error.name }"
+            :aria-invalid="error.name ? 'true' : undefined"
+            :aria-describedby="error.name ? 'site-name-err' : undefined"
+            data-autofocus
+          />
+          <span v-if="error.name" id="site-name-err" class="err">
+            <Icon name="warn" :size="12" />
+            {{ error.name }}
+          </span>
+        </label>
+
+        <label class="field">
+          <span class="label">网址 <i aria-hidden="true">*</i></span>
+          <input
+            v-model="form.url"
+            class="field-input"
+            type="text"
+            inputmode="url"
+            placeholder="https://example.com（可省略 https://）"
+            :class="{ invalid: error.url }"
+            :aria-invalid="error.url ? 'true' : undefined"
+            :aria-describedby="error.url ? 'site-url-err' : undefined"
+          />
+          <span v-if="error.url" id="site-url-err" class="err">
+            <Icon name="warn" :size="12" />
+            {{ error.url }}
+          </span>
+        </label>
+
+        <label class="field">
+          <span class="label">描述</span>
+          <input v-model="form.desc" class="field-input" type="text" placeholder="一句话介绍该站点（可选）" maxlength="60" />
+        </label>
+
+        <label class="field">
+          <span class="label">图标地址</span>
+          <input v-model="form.icon" class="field-input" type="text" inputmode="url" placeholder="留空将自动获取站点图标" />
+        </label>
+      </template>
+    </div>
 
     <template #footer>
       <button class="btn btn-ghost" type="button" @click="emit('close')">取消</button>
-      <button class="btn btn-primary" type="button" @click="submit">{{ isEdit ? '保存' : '添加' }}</button>
+      <button v-if="bulk" class="btn btn-primary" type="button" :disabled="!bulkText.trim()" @click="submitBulk">
+        批量添加
+      </button>
+      <button v-else class="btn btn-primary" type="button" @click="submit">{{ isEdit ? '保存' : '添加' }}</button>
     </template>
   </Modal>
 </template>
 
 <style scoped>
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-4);
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-}
-
-.label {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--text-2);
-}
-
-.label i {
-  color: var(--danger-text);
-  font-style: normal;
-}
-
 .err {
   display: inline-flex;
   align-items: center;

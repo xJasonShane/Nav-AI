@@ -2,7 +2,9 @@
 import { ref, computed } from 'vue'
 import Modal from './Modal.vue'
 import ConfirmCard from './ConfirmCard.vue'
-import { store, exportJSON, importJSON, resetData } from '../store/data.js'
+import { store, exportJSON, importJSON, resetData, importSites } from '../store/data.js'
+import { parseBookmarksHTML } from '../utils/importers.js'
+import { showToast } from '../utils/toast.js'
 
 const emit = defineEmits(['close'])
 
@@ -10,6 +12,7 @@ const importText = ref('')
 const message = ref('')
 const messageType = ref('ok')
 const fileInput = ref(null)
+const bookmarksInput = ref(null)
 const confirmingReset = ref(false)
 
 const stats = computed(() => {
@@ -69,6 +72,27 @@ function onFileChange(e) {
   e.target.value = ''
 }
 
+/** 导入浏览器书签 HTML：按文件夹还原分类，与现有数据合并（同网址去重） */
+function onBookmarksChange(e) {
+  const file = e.target.files?.[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = () => {
+    const entries = parseBookmarksHTML(String(reader.result))
+    if (!entries.length) {
+      notify('未解析出书签，请确认是浏览器导出的书签 HTML 文件', 'err')
+      return
+    }
+    const result = importSites(entries)
+    const parts = [`新增 ${result.added} 个站点`]
+    if (result.categories) parts.push(`新建 ${result.categories} 个分类`)
+    if (result.skipped) parts.push(`跳过 ${result.skipped} 个重复项`)
+    notify('书签导入完成：' + parts.join('，'))
+  }
+  reader.readAsText(file)
+  e.target.value = ''
+}
+
 function doReset() {
   resetData()
   confirmingReset.value = false
@@ -103,6 +127,17 @@ function doReset() {
         <button class="btn btn-primary" type="button" :disabled="!importText.trim()" @click="doImportText">从文本导入</button>
         <button class="btn btn-ghost" type="button" @click="fileInput.click()">选择备份文件…</button>
         <input ref="fileInput" type="file" accept=".json,application/json" hidden @change="onFileChange" />
+      </div>
+    </section>
+
+    <section class="sec">
+      <h4>导入浏览器书签</h4>
+      <p class="hint">
+        选择浏览器导出的书签 HTML（Chrome / Edge：书签管理器 → 导出书签），按文件夹还原为分类，并与现有数据合并（同网址自动跳过）。
+      </p>
+      <div class="ops">
+        <button class="btn btn-ghost" type="button" @click="bookmarksInput.click()">选择书签文件…</button>
+        <input ref="bookmarksInput" type="file" accept=".html,.htm,text/html" hidden @change="onBookmarksChange" />
       </div>
     </section>
 
@@ -185,8 +220,6 @@ function doReset() {
 }
 
 .hint {
-  font-size: var(--fs-xs);
-  color: var(--text-3);
   margin-bottom: var(--sp-3);
 }
 

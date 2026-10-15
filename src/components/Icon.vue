@@ -21,6 +21,7 @@ const PATHS = {
   check: 'M20 6 9 17l-5-5',
   up: 'M12 19V5M5 12l7-7 7 7',
   down: 'M12 5v14M19 12l-7 7-7-7',
+  warn: 'M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18M12 8v5m0 3.4h.01',
 }
 
 const d = computed(() => PATHS[props.name] || '')

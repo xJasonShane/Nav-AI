@@ -22,8 +22,15 @@ const read = (p) => readFileSync(join(ROOT, p), 'utf8')
 const readLines = (file) =>
   readFileSync(file, 'utf8').split('\n').map((text, i) => ({ no: i + 1, text }))
 
-/** 体积预算（gzip 后字节数） */
-const BUDGET = { css: 6 * 1024, js: 44 * 1024 }
+/**
+ * 体积预算（gzip 后字节数）。
+ * 历史：UI 审计期为 CSS 6 kB / JS 44 kB。
+ * 批次 2 新增 F1 站点排序 / F2 命令面板搜索 / F4 批量与书签导入 / F5 设置面板（组件 7 → 12）：
+ *   - CSS：先做等量去重（.form/.field/.label/.hint/.seg 提升为全局类、色板按钮合并），实测 5.90 kB，**维持原 6 kB 上限**（余量仅 0.1 kB，下次新增样式前先削减）；
+ *   - JS：由 44 kB 重基线为 48 kB。
+ * 任何再次上调都必须是有意识的决策（记录到 docs/ui-audit-and-plan.md 与本注释）。
+ */
+const BUDGET = { css: 6 * 1024, js: 48 * 1024 }
 /** 允许保留裸值的白名单（按文件 → 正则） */
 const TOKEN_ALLOW = {
   'src/components/EmptyState.vue': [/font-size:\s*\d+px/], // emoji 装饰图标尺寸
@@ -96,11 +103,12 @@ check('品牌色不散落到组件', () => {
   return bad
 })
 
-check('禁用 v-html', () => {
+check('禁用 v-html 与原生 confirm', () => {
   const bad = []
   for (const file of srcFiles) {
     for (const { no, text } of readLines(file)) {
-      if (text.includes('v-html')) bad.push(`${rel(file)}:${no}`)
+      if (text.includes('v-html')) bad.push(`${rel(file)}:${no} 禁用 v-html`)
+      if (/\bconfirm\s*\(/.test(text)) bad.push(`${rel(file)}:${no} 请使用 ConfirmCard 替代原生 confirm`)
     }
   }
   return bad
@@ -146,7 +154,7 @@ check('功能图标集中维护（Icon.vue）', () => {
   return bad
 })
 
-check('产物体积预算（CSS ≤ 6 kB / JS ≤ 44 kB，gzip）', () => {
+check('产物体积预算（CSS ≤ 6 kB / JS ≤ 48 kB，gzip）', () => {
   const dir = join(ROOT, 'dist', 'assets')
   if (!existsSync(dir)) return [] // 未构建时跳过
   const files = readdirSync(dir).filter((f) => ['.css', '.js'].includes(extname(f)))

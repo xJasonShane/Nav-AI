@@ -15,6 +15,7 @@
           var t = (s.settings && s.settings.theme) || 'auto';
           var dark = t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
           document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+          document.documentElement.dataset.accent = (s.settings && s.settings.accent) || 'default';
 
           var syncMeta = function () {
             var el = document.querySelector('meta[name="theme-color"]');

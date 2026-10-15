@@ -1,21 +1,33 @@
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import TopBar from './components/TopBar.vue'
 import SideBar from './components/SideBar.vue'
 import SiteCard from './components/SiteCard.vue'
 import SiteModal from './components/SiteModal.vue'
 import CategoryModal from './components/CategoryModal.vue'
 import DataModal from './components/DataModal.vue'
+import SettingsModal from './components/SettingsModal.vue'
 import Modal from './components/Modal.vue'
 import ConfirmCard from './components/ConfirmCard.vue'
 import EmptyState from './components/EmptyState.vue'
+import Toast from './components/Toast.vue'
 import Icon from './components/Icon.vue'
-import { store, sitesOf, findCategory, removeSite, storageNotice, clearStorageNotice } from './store/data.js'
+import {
+  store,
+  sitesOf,
+  findCategory,
+  removeSite,
+  restoreSite,
+  storageNotice,
+  clearStorageNotice,
+} from './store/data.js'
+import { showToast } from './utils/toast.js'
 
 /* ------- 视图状态 ------- */
 const selectedId = ref(null) // null=全部 | 分类id | 'uncategorized'
 const query = ref('')
 const admin = ref(false)
+const orderMode = ref(false)
 const sidebarOpen = ref(false)
 const mainRef = ref(null)
 
@@ -23,11 +35,18 @@ const mainRef = ref(null)
 const siteModal = ref(null) // { site, categoryId } | null
 const showCategoryModal = ref(false)
 const showDataModal = ref(false)
+const showSettingsModal = ref(false)
 const pendingSite = ref(null) // 待确认删除的站点
 
 /** 跳到主内容（skip link）：聚焦主区而不改变 URL */
 function focusMain() {
   mainRef.value?.focus()
+}
+
+/** 排序模式：进入时清空搜索（搜索结果不参与排序） */
+function toggleOrder() {
+  orderMode.value = !orderMode.value
+  if (orderMode.value) query.value = ''
 }
 
 const searching = computed(() => query.value.trim().length > 0)
@@ -105,14 +124,49 @@ function selectCategory(id) {
   query.value = ''
 }
 
+/** 搜索结果的当前选中项（命令面板式：↑↓ 选择，Enter 打开） */
+const activeIndex = ref(0)
+
+watch(searchResults, (list) => {
+  activeIndex.value = list.length ? 0 : -1
+})
+
+function moveActive(delta) {
+  const list = searchResults.value
+  if (!list.length) return
+  activeIndex.value = (activeIndex.value + delta + list.length) % list.length
+  const id = list[activeIndex.value]?.id
+  nextTick(() => document.getElementById(`search-opt-${id}`)?.scrollIntoView({ block: 'nearest' }))
+}
+
+function openActive() {
+  const site = searchResults.value[activeIndex.value]
+  if (site) window.open(site.url, '_blank', 'noopener,noreferrer')
+}
+
+/** 供搜索框声明 aria-activedescendant，读屏可跟随当前选中项 */
+const activeDescendant = computed(() => {
+  if (!searching.value || activeIndex.value < 0) return ''
+  const site = searchResults.value[activeIndex.value]
+  return site ? `search-opt-${site.id}` : ''
+})
+
 /** 删除站点：走统一确认卡（内嵌确认，替换原生 confirm） */
 function deleteSite(site) {
   pendingSite.value = site
 }
 
+/** 确认删除后提供 6 秒撤销窗口 */
 function confirmDeleteSite() {
-  if (pendingSite.value) removeSite(pendingSite.value.id)
+  const target = pendingSite.value
   pendingSite.value = null
+  if (!target) return
+  const snapshot = removeSite(target.id)
+  if (!snapshot) return
+  showToast(`已删除「${target.name}」`, {
+    label: '撤销',
+    run: () => restoreSite(snapshot.site, snapshot.index),
+  })
 }
 
 /** 任一浮层（弹窗或移动端抽屉）打开时，全局快捷键让位给浮层 */
@@ -122,12 +176,34 @@ const overlayOpen = computed(
     !!siteModal.value ||
     showCategoryModal.value ||
     showDataModal.value ||
+    showSettingsModal.value ||
     !!pendingSite.value
 )
 
-/** "/" 聚焦搜索框；Esc 清空搜索（对齐使用文档） */
+/** "/" 聚焦搜索框；↑↓/Enter 在搜索结果间移动与打开；Esc 退出排序 / 清空搜索 */
 function onKey(e) {
   if (overlayOpen.value) return
+  if (searching.value) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      moveActive(1)
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      moveActive(-1)
+      return
+    }
+    if (e.key === 'Enter' && activeIndex.value >= 0) {
+      e.preventDefault()
+      openActive()
+      return
+    }
+  }
+  if (e.key === 'Escape' && orderMode.value) {
+    orderMode.value = false
+    return
+  }
   if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(e.target.tagName) && !e.target.isContentEditable) {
     e.preventDefault()
     document.querySelector('.search input')?.focus()
@@ -158,6 +234,8 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
   <TopBar
     v-model:query="query"
     :admin="admin"
+    :searching="searching"
+    :active-descendant="activeDescendant"
     @toggle-admin="admin = !admin"
     @open-data="showDataModal = true"
     @toggle-sidebar="sidebarOpen = !sidebarOpen"
@@ -165,10 +243,7 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
 
   <!-- 存储异常提示（读取失败 / 写入失败），可关闭 -->
   <div v-if="storageNotice" class="notice" role="alert">
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 8v5m0 3.4h.01" />
-    </svg>
+    <Icon name="warn" :size="15" />
     <span>{{ storageNotice }}</span>
     <button class="icon-btn-sm notice-close" type="button" aria-label="关闭提示" @click="clearStorageNotice">
       <Icon name="close" />
@@ -181,6 +256,7 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
       :open="sidebarOpen"
       @select="selectCategory"
       @manage-categories="showCategoryModal = true"
+      @open-settings="showSettingsModal = true"
       @close="sidebarOpen = false"
     />
 
@@ -195,11 +271,22 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
         <button class="btn btn-primary" type="button" @click="admin = true; siteModal = { site: null, categoryId: null }">添加第一个站点</button>
       </EmptyState>
 
-      <!-- 搜索结果 -->
+      <!-- 搜索结果（命令面板式：↑↓ 选择、Enter 打开） -->
       <template v-else-if="searching">
         <h1 class="section-title" aria-live="polite">{{ selectedTitle }}</h1>
-        <div v-if="searchResults.length" class="grid">
-          <SiteCard v-for="s in searchResults" :key="s.id" :site="s" :admin="admin" @edit="siteModal = { site: s, categoryId: null }" @remove="deleteSite(s)" />
+        <div v-if="searchResults.length" id="search-results" class="grid" role="listbox" aria-label="搜索结果">
+          <SiteCard
+            v-for="(s, i) in searchResults"
+            :id="`search-opt-${s.id}`"
+            :key="s.id"
+            role="option"
+            :aria-selected="i === activeIndex ? 'true' : 'false'"
+            :active="i === activeIndex"
+            :site="s"
+            :admin="admin"
+            @edit="siteModal = { site: s, categoryId: null }"
+            @remove="deleteSite(s)"
+          />
         </div>
         <EmptyState v-else icon="🔍" :desc="`没有找到与「${query}」匹配的站点`" />
       </template>
@@ -208,11 +295,28 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
       <template v-else>
         <div class="view-head">
           <h1 class="section-title">{{ selectedTitle }}</h1>
-          <button v-if="admin" class="btn btn-ghost add-site-btn" type="button" @click="siteModal = { site: null, categoryId: selectedId === 'uncategorized' ? null : selectedId }">
-            <Icon name="plus" :stroke="2.2" />
-            添加站点
-          </button>
+          <div v-if="admin" class="view-ops">
+            <button
+              class="btn"
+              :class="orderMode ? 'btn-primary' : 'btn-ghost'"
+              type="button"
+              :aria-pressed="orderMode"
+              @click="toggleOrder"
+            >
+              <Icon name="up" :stroke="2.2" />
+              {{ orderMode ? '完成排序' : '排序' }}
+            </button>
+            <button class="btn btn-ghost add-site-btn" type="button" @click="siteModal = { site: null, categoryId: selectedId === 'uncategorized' ? null : selectedId }">
+              <Icon name="plus" :stroke="2.2" />
+              添加站点
+            </button>
+          </div>
         </div>
+
+        <!-- 排序模式提示 -->
+        <p v-if="orderMode" class="order-hint" role="status">
+          拖动卡片调整顺序（拖到其它分组即移动分类），或用卡片上的 ↑↓ 按钮；按 Esc 退出排序。
+        </p>
 
         <template v-if="groups.some((g) => g.sites.length || g.children.some((c) => c.sites.length))">
           <section v-for="g in groups" :key="g.key" class="group">
@@ -220,15 +324,15 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
               <h2 class="group-title">
                 <span class="g-icon">{{ g.icon }}</span>{{ g.title }}
                 <span class="badge">{{ g.sites.length + g.children.reduce((n, c) => n + c.sites.length, 0) }}</span>
-                <button v-if="admin" class="g-add" type="button" title="添加站点到该分类" aria-label="添加站点到该分类" @click="siteModal = { site: null, categoryId: g.key }">
+                <button v-if="admin && !orderMode" class="g-add" type="button" title="添加站点到该分类" aria-label="添加站点到该分类" @click="siteModal = { site: null, categoryId: g.key }">
                   <Icon name="plus" :stroke="2.2" />
                 </button>
               </h2>
             </template>
 
             <div v-if="g.sites.length || admin" class="grid">
-              <SiteCard v-for="s in g.sites" :key="s.id" :site="s" :admin="admin" @edit="siteModal = { site: s, categoryId: null }" @remove="deleteSite(s)" />
-              <button v-if="admin && g.key !== 'uncat'" class="add-card btn-dashed" type="button" @click="siteModal = { site: null, categoryId: g.key }">
+              <SiteCard v-for="s in g.sites" :key="s.id" :site="s" :admin="admin" :order="orderMode" @edit="siteModal = { site: s, categoryId: null }" @remove="deleteSite(s)" />
+              <button v-if="admin && !orderMode && g.key !== 'uncat'" class="add-card btn-dashed" type="button" @click="siteModal = { site: null, categoryId: g.key }">
                 <Icon name="plus" :stroke="2.2" />
                 添加站点
               </button>
@@ -238,12 +342,12 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
               <h3 v-if="child.sites.length" class="sub-title">
                 <span class="g-icon">{{ child.icon }}</span>{{ child.title }}
                 <span class="badge">{{ child.sites.length }}</span>
-                <button v-if="admin" class="g-add" type="button" title="添加站点到该子分类" aria-label="添加站点到该子分类" @click="siteModal = { site: null, categoryId: child.key }">
+                <button v-if="admin && !orderMode" class="g-add" type="button" title="添加站点到该子分类" aria-label="添加站点到该子分类" @click="siteModal = { site: null, categoryId: child.key }">
                   <Icon name="plus" :stroke="2.2" />
                 </button>
               </h3>
               <div v-if="child.sites.length" class="grid">
-                <SiteCard v-for="s in child.sites" :key="s.id" :site="s" :admin="admin" @edit="siteModal = { site: s, categoryId: null }" @remove="deleteSite(s)" />
+                <SiteCard v-for="s in child.sites" :key="s.id" :site="s" :admin="admin" :order="orderMode" @edit="siteModal = { site: s, categoryId: null }" @remove="deleteSite(s)" />
               </div>
             </div>
           </section>
@@ -258,7 +362,7 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
   </div>
 
   <!-- 悬浮添加按钮（管理模式 + 移动端友好） -->
-  <button v-if="admin && !searching" class="fab" type="button" title="添加站点" aria-label="添加站点" @click="siteModal = { site: null, categoryId: null }">
+  <button v-if="admin && !searching && !orderMode" class="fab" type="button" title="添加站点" aria-label="添加站点" @click="siteModal = { site: null, categoryId: null }">
     <Icon name="plus" :size="22" :stroke="2.2" />
   </button>
 
@@ -266,13 +370,17 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
   <SiteModal v-if="siteModal" :site="siteModal.site" :category-id="siteModal.categoryId" @close="siteModal = null" />
   <CategoryModal v-if="showCategoryModal" @close="showCategoryModal = false" />
   <DataModal v-if="showDataModal" @close="showDataModal = false" />
+  <SettingsModal v-if="showSettingsModal" @close="showSettingsModal = false" />
 
   <!-- 删除站点确认（统一确认卡） -->
   <Modal v-if="pendingSite" title="删除站点" :width="400" @close="pendingSite = null">
     <ConfirmCard confirm-text="确认删除" danger @confirm="confirmDeleteSite" @cancel="pendingSite = null">
-      确定删除站点「{{ pendingSite.name }}」？该操作不可撤销。
+      确定删除站点「{{ pendingSite.name }}」？删除后 6 秒内可撤销。
     </ConfirmCard>
   </Modal>
+
+  <!-- 全局提示（含删除撤销） -->
+  <Toast />
 </template>
 
 <style scoped>
@@ -372,6 +480,25 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-3);
+}
+
+.view-ops {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-shrink: 0;
+}
+
+/* 排序模式提示条 */
+.order-hint {
+  margin-bottom: var(--sp-4);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--accent-weak);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-relaxed);
 }
 
 .add-site-btn {

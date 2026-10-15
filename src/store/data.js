@@ -3,13 +3,49 @@
  * 结构：
  *   categories: [{ id, name, icon, children: [...] }]   最多两级树
  *   sites:      [{ id, name, url, desc, icon, categoryId }]  categoryId 为 null 表示未分类
- *   settings:   { title, theme }
+ *   settings:   { title, theme, accent, iconSource }
+ *   version:    当前 DATA_VERSION；旧数据经 migrate() 升级后再归一化
  */
 import { computed, reactive, ref, watch } from 'vue'
 
 const STORAGE_KEY = 'nav-ai-data-v1'
 /** 数据损坏时的旁路备份键：避免被默认数据的首次写回覆盖，保留可人工恢复的现场 */
 const BACKUP_KEY = `${STORAGE_KEY}.bak`
+
+/** 当前数据版本：新增字段时 +1，并在 MIGRATIONS 中补一条升级函数 */
+export const DATA_VERSION = 2
+
+/** 主色预设（与 src/style.css 的 html[data-accent=…] 一一对应） */
+export const ACCENT_PRESETS = [
+  { key: 'default', label: '经典蓝', color: '#4f7cff' },
+  { key: 'ocean', label: '海蓝', color: '#0ea5e9' },
+  { key: 'forest', label: '森林绿', color: '#10b981' },
+  { key: 'sunset', label: '落日橙', color: '#f59e0b' },
+  { key: 'grape', label: '葡萄紫', color: '#8b5cf6' },
+  { key: 'rose', label: '玫瑰粉', color: '#ec4899' },
+]
+const ACCENT_KEYS = ACCENT_PRESETS.map((p) => p.key)
+const ICON_SOURCES = ['auto', 'service']
+
+/**
+ * 版本迁移链：键为「目标版本」，值为从 上一版 → 该版 的升级函数。
+ * 所有读取入口（load / importJSON / applyExternalData）都先走 migrate()，保证下游只处理当前版本结构。
+ */
+const MIGRATIONS = {
+  /** 1 → 2：settings 增加 iconSource（图标源）与 accent（主色预设） */
+  2: (data) => ({ ...data, settings: { iconSource: 'auto', accent: 'default', ...(data.settings || {}) } }),
+}
+
+/** 把任意版本的数据升级到 DATA_VERSION（无法识别的字段由 normalizeData 兜底） */
+export function migrate(input) {
+  let data = input && typeof input === 'object' ? { ...input } : {}
+  let v = Number.isInteger(data.version) ? data.version : 1
+  while (v < DATA_VERSION && MIGRATIONS[v + 1]) {
+    data = MIGRATIONS[v + 1](data)
+    v += 1
+  }
+  return { ...data, version: DATA_VERSION }
+}
 
 /** 读取期异常（数据损坏/存储不可用）：需用户手动关闭 */
 const loadWarning = ref('')
@@ -33,8 +69,8 @@ export function uid() {
 function defaultData() {
   const c = (id) => id
   return {
-    version: 1,
-    settings: { title: 'Nav-AI', theme: 'auto' },
+    version: DATA_VERSION,
+    settings: { title: 'Nav-AI', theme: 'auto', accent: 'default', iconSource: 'auto' },
     categories: [
       {
         id: c('cat-daily'), name: '常用推荐', icon: '🌟', children: [],
@@ -119,6 +155,8 @@ export function normalizeData(input) {
   const settings = {
     title: typeof rawSettings.title === 'string' && rawSettings.title.trim() ? rawSettings.title.trim() : 'Nav-AI',
     theme: ['auto', 'light', 'dark'].includes(rawSettings.theme) ? rawSettings.theme : 'auto',
+    accent: ACCENT_KEYS.includes(rawSettings.accent) ? rawSettings.accent : 'default',
+    iconSource: ICON_SOURCES.includes(rawSettings.iconSource) ? rawSettings.iconSource : 'auto',
   }
 
   return { settings, categories, sites, moved }
@@ -136,10 +174,10 @@ function load() {
     if (raw) {
       const parsed = JSON.parse(raw)
       if (parsed && Array.isArray(parsed.categories) && Array.isArray(parsed.sites)) {
-        // 加载期自愈：历史数据里的悬空分类会被归入「未分类」
-        const { settings, categories, sites, moved } = normalizeData(parsed)
+        // 先升级版本，再归一化：历史数据里的悬空分类会被归入「未分类」
+        const { settings, categories, sites, moved } = normalizeData(migrate(parsed))
         if (moved) loadWarning.value = `检测到 ${moved} 个站点的所属分类已失效，已归入「未分类」。`
-        return { version: parsed.version || 1, settings, categories, sites }
+        return { version: DATA_VERSION, settings, categories, sites }
       }
       backupRaw(raw)
       loadWarning.value = `本地数据结构异常，已回退为默认示例数据；原内容已备份到 localStorage 的「${BACKUP_KEY}」。`
@@ -182,8 +220,8 @@ watch(
 export function applyExternalData(json) {
   try {
     const parsed = JSON.parse(json)
-    const { settings, categories, sites } = normalizeData(parsed)
-    const next = { version: parsed?.version || 1, settings, categories, sites }
+    const { settings, categories, sites } = normalizeData(migrate(parsed))
+    const next = { version: DATA_VERSION, settings, categories, sites }
     if (JSON.stringify(next) === JSON.stringify(store)) return false
     Object.assign(store, next)
     return true
@@ -260,21 +298,36 @@ export function renameCategory(id, name, icon) {
   }
 }
 
-/** 删除分类：其下所有站点移入"未分类"，子分类一并移除 */
+/** 删除分类：其下所有站点移入"未分类"，子分类一并移除；返回快照供撤销 */
 export function removeCategory(id) {
   const hit = findCategory(id)
-  if (!hit) return 0
+  if (!hit) return null
   const ids = new Set([id])
   walkCategories([hit.node], (n) => ids.add(n.id))
-  let moved = 0
-  store.sites.forEach((s) => {
-    if (ids.has(s.categoryId)) {
-      s.categoryId = null
-      moved++
+  const movedSites = []
+  store.sites.forEach((site) => {
+    if (ids.has(site.categoryId)) {
+      movedSites.push({ site, categoryId: site.categoryId })
+      site.categoryId = null
     }
   })
   hit.list.splice(hit.index, 1)
-  return moved
+  return { node: hit.node, parentId: hit.parent?.id || null, index: hit.index, movedSites }
+}
+
+/** 撤销删除分类：放回原位置，并把站点还原到原子分类 */
+export function restoreCategory(snapshot) {
+  if (!snapshot?.node) return
+  if (snapshot.parentId) {
+    const parent = findCategory(snapshot.parentId)
+    if (!parent) return
+    const at = Math.min(snapshot.index, parent.node.children.length)
+    parent.node.children.splice(at, 0, snapshot.node)
+  } else {
+    const at = Math.min(snapshot.index, store.categories.length)
+    store.categories.splice(at, 0, snapshot.node)
+  }
+  for (const { site, categoryId } of snapshot.movedSites || []) site.categoryId = categoryId
 }
 
 /** 同级上移 / 下移（dir: -1 上移，1 下移） */
@@ -299,9 +352,54 @@ export function updateSite(id, patch) {
   if (site) Object.assign(site, patch)
 }
 
+/** 删除站点：返回 { site, index } 快照，供「撤销」还原到原位置 */
 export function removeSite(id) {
-  const i = store.sites.findIndex((s) => s.id === id)
-  if (i !== -1) store.sites.splice(i, 1)
+  const index = store.sites.findIndex((s) => s.id === id)
+  if (index === -1) return null
+  const [site] = store.sites.splice(index, 1)
+  return { site, index }
+}
+
+/** 撤销删除站点：放回原位置（越界时落到末尾） */
+export function restoreSite(site, index) {
+  if (!site) return
+  const at = Math.min(Math.max(index ?? store.sites.length, 0), store.sites.length)
+  store.sites.splice(at, 0, site)
+}
+
+/** 同分类内上移 / 下移（dir: -1 上移，1 下移）；跳过其它分类的站点 */
+export function moveSite(id, dir) {
+  const list = store.sites
+  const from = list.findIndex((s) => s.id === id)
+  if (from === -1) return false
+  const cat = list[from].categoryId || null
+  let to = from + dir
+  while (to >= 0 && to < list.length && (list[to].categoryId || null) !== cat) to += dir
+  if (to < 0 || to >= list.length) return false
+  const [node] = list.splice(from, 1)
+  // 取出后 to 位置即最终落点（移除元素只会影响其之后的索引，而目标恒在 from 的另一侧）
+  list.splice(to, 0, node)
+  return true
+}
+
+/**
+ * 拖拽排序：把 draggedId 插到 targetId 之前 / 之后，并跟随目标分类（拖到别的分组即等于移动分类）。
+ * 目标不存在时回滚到原位。
+ */
+export function moveSiteRelative(draggedId, targetId, after = false) {
+  if (draggedId === targetId) return false
+  const list = store.sites
+  const from = list.findIndex((s) => s.id === draggedId)
+  if (from === -1) return false
+  const [node] = list.splice(from, 1)
+  const targetIndex = list.findIndex((s) => s.id === targetId)
+  if (targetIndex === -1) {
+    list.splice(from, 0, node)
+    return false
+  }
+  node.categoryId = list[targetIndex].categoryId || null
+  list.splice(after ? targetIndex + 1 : targetIndex, 0, node)
+  return true
 }
 
 /** 某分类下的站点（不含子分类），数据来自派生索引 */
@@ -312,11 +410,11 @@ export function sitesOf(categoryId) {
 /* ---------------- 数据导入 / 导出 ---------------- */
 
 export function exportJSON() {
-  return JSON.stringify({ version: 1, ...JSON.parse(JSON.stringify(store)) }, null, 2)
+  return JSON.stringify({ ...JSON.parse(JSON.stringify(store)), version: DATA_VERSION }, null, 2)
 }
 
 /**
- * 导入数据：先归一化（补字段 / 去非法节点 / 失效分类归入「未分类」），再整体替换。
+ * 导入数据：先升级版本、再归一化（补字段 / 去非法节点 / 失效分类归入「未分类」），最后整体替换。
  * @returns {{ categories: number, sites: number, moved: number }} 导入结果，供界面提示
  */
 export function importJSON(text) {
@@ -324,18 +422,93 @@ export function importJSON(text) {
   if (!parsed || !Array.isArray(parsed.categories) || !Array.isArray(parsed.sites)) {
     throw new Error('数据格式不正确：缺少 categories 或 sites 字段')
   }
-  const { settings, categories, sites, moved } = normalizeData(parsed)
-  Object.assign(store, { version: 1, settings, categories, sites })
+  const { settings, categories, sites, moved } = normalizeData(migrate(parsed))
+  Object.assign(store, { version: DATA_VERSION, settings, categories, sites })
   return { categories: categories.length, sites: sites.length, moved }
+}
+
+/* ---------------- 批量导入（粘贴多行 / 浏览器书签） ---------------- */
+
+/** URL 去重键：忽略协议、www 前缀、末尾斜杠与大小写 */
+function urlKey(url) {
+  return String(url || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/+$/, '')
+}
+
+/** 按名称查找或创建分类路径（最多两级，更深的层级折叠到第二级） */
+function ensureCategoryPath(path) {
+  const names = (Array.isArray(path) ? path : []).map((n) => String(n || '').trim()).filter(Boolean).slice(0, 2)
+  if (!names.length) return { id: null, created: 0 }
+  let created = 0
+  let top = store.categories.find((c) => c.name === names[0])
+  if (!top) {
+    top = addCategory(names[0])
+    created += 1
+  }
+  if (names.length < 2) return { id: top.id, created }
+  let child = (top.children || []).find((c) => c.name === names[1])
+  if (!child) {
+    child = addCategory(names[1], '', top.id)
+    created += 1
+  }
+  return { id: child.id, created }
+}
+
+/**
+ * 批量导入站点：按 URL 去重（与现有数据比对），返回导入统计。
+ * @param {{ name?: string, url: string, categoryPath?: string[] }[]} entries
+ * @param {string|null} [fixedCategoryId] 传 null 表示「未分类」；不传则按 categoryPath 建/找分类
+ * @returns {{ added: number, skipped: number, categories: number }}
+ */
+export function importSites(entries, fixedCategoryId) {
+  const fixed = fixedCategoryId !== undefined
+  const seen = new Set(store.sites.map((s) => urlKey(s.url)).filter(Boolean))
+  let added = 0
+  let skipped = 0
+  let categories = 0
+  for (const entry of entries || []) {
+    const url = String(entry?.url || '').trim()
+    const key = urlKey(url)
+    if (!key || seen.has(key)) {
+      skipped += 1
+      continue
+    }
+    seen.add(key)
+    let categoryId = null
+    if (fixed) {
+      categoryId = fixedCategoryId || null
+    } else {
+      const res = ensureCategoryPath(entry.categoryPath)
+      categoryId = res.id
+      categories += res.created
+    }
+    store.sites.push({
+      id: uid(),
+      name: String(entry.name || '').trim() || key,
+      url,
+      desc: '',
+      icon: '',
+      categoryId,
+    })
+    added += 1
+  }
+  return { added, skipped, categories }
 }
 
 export function resetData() {
   Object.assign(store, defaultData())
 }
 
-/* ---------------- 主题 ---------------- */
+/* ---------------- 外观（主题 / 主色） ---------------- */
 
-const media = window.matchMedia('(prefers-color-scheme: dark)')
+const media =
+  typeof window !== 'undefined' && window.matchMedia
+    ? window.matchMedia('(prefers-color-scheme: dark)')
+    : { matches: false, addEventListener() {} }
 
 export function applyTheme() {
   const t = store.settings.theme
@@ -343,9 +516,21 @@ export function applyTheme() {
   document.documentElement.dataset.theme = dark ? 'dark' : 'light'
 }
 
+/** 主色预设：写入 data-accent，由 style.css 的 html[data-accent=…] 覆盖 --accent / --accent-2 */
+export function applyAccent() {
+  document.documentElement.dataset.accent = store.settings.accent || 'default'
+}
+
+/** 首屏一次性应用外观（主题 + 主色） */
+export function applyAppearance() {
+  applyTheme()
+  applyAccent()
+}
+
 media.addEventListener('change', () => {
   if (store.settings.theme === 'auto') applyTheme()
 })
 
-// 主题随数据自动应用：导入备份 / 恢复默认等直接改写 settings.theme 的路径同样生效
+// 主题 / 主色随数据自动应用：导入备份、恢复默认、设置面板等路径同样生效
 watch(() => store.settings.theme, applyTheme)
+watch(() => store.settings.accent, applyAccent)

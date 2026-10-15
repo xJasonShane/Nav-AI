@@ -13,7 +13,7 @@ const STORAGE_KEY = 'nav-ai-data-v1'
 const BACKUP_KEY = `${STORAGE_KEY}.bak`
 
 /** 当前数据版本：新增字段时 +1，并在 MIGRATIONS 中补一条升级函数 */
-export const DATA_VERSION = 2
+export const DATA_VERSION = 3
 
 /** 主色预设（与 src/style.css 的 html[data-accent=…] 一一对应） */
 export const ACCENT_PRESETS = [
@@ -26,6 +26,12 @@ export const ACCENT_PRESETS = [
 ]
 const ACCENT_KEYS = ACCENT_PRESETS.map((p) => p.key)
 const ICON_SOURCES = ['auto', 'service']
+/** 卡片密度预设（与 style.css 的 html[data-density=…] 对应） */
+export const DENSITIES = [
+  { key: 'comfortable', label: '舒适' },
+  { key: 'compact', label: '紧凑' },
+]
+const DENSITY_KEYS = DENSITIES.map((d) => d.key)
 
 /**
  * 版本迁移链：键为「目标版本」，值为从 上一版 → 该版 的升级函数。
@@ -34,6 +40,8 @@ const ICON_SOURCES = ['auto', 'service']
 const MIGRATIONS = {
   /** 1 → 2：settings 增加 iconSource（图标源）与 accent（主色预设） */
   2: (data) => ({ ...data, settings: { iconSource: 'auto', accent: 'default', ...(data.settings || {}) } }),
+  /** 2 → 3：settings 增加 density（卡片密度）与 showDesc（是否显示描述） */
+  3: (data) => ({ ...data, settings: { density: 'comfortable', showDesc: true, ...(data.settings || {}) } }),
 }
 
 /** 把任意版本的数据升级到 DATA_VERSION（无法识别的字段由 normalizeData 兜底） */
@@ -70,7 +78,14 @@ function defaultData() {
   const c = (id) => id
   return {
     version: DATA_VERSION,
-    settings: { title: 'Nav-AI', theme: 'auto', accent: 'default', iconSource: 'auto' },
+    settings: {
+      title: 'Nav-AI',
+      theme: 'auto',
+      accent: 'default',
+      iconSource: 'auto',
+      density: 'comfortable',
+      showDesc: true,
+    },
     categories: [
       {
         id: c('cat-daily'), name: '常用推荐', icon: '🌟', children: [],
@@ -157,6 +172,9 @@ export function normalizeData(input) {
     theme: ['auto', 'light', 'dark'].includes(rawSettings.theme) ? rawSettings.theme : 'auto',
     accent: ACCENT_KEYS.includes(rawSettings.accent) ? rawSettings.accent : 'default',
     iconSource: ICON_SOURCES.includes(rawSettings.iconSource) ? rawSettings.iconSource : 'auto',
+    density: DENSITY_KEYS.includes(rawSettings.density) ? rawSettings.density : 'comfortable',
+    // 仅显式 false 才隐藏描述，缺省保持显示
+    showDesc: rawSettings.showDesc !== false,
   }
 
   return { settings, categories, sites, moved }
@@ -367,6 +385,39 @@ export function restoreSite(site, index) {
   store.sites.splice(at, 0, site)
 }
 
+/** 批量移动站点到指定分类（categoryId 为 null 表示「未分类」） */
+export function moveSitesTo(ids, categoryId) {
+  const set = new Set(ids)
+  let moved = 0
+  for (const site of store.sites) {
+    if (!set.has(site.id)) continue
+    site.categoryId = categoryId || null
+    moved += 1
+  }
+  return moved
+}
+
+/** 批量删除站点：返回按原顺序排列的快照，供撤销 */
+export function removeSites(ids) {
+  const set = new Set(ids)
+  const snapshots = []
+  store.sites.forEach((site, index) => {
+    if (set.has(site.id)) snapshots.push({ site, index })
+  })
+  // 从后往前删，避免索引位移
+  for (let i = snapshots.length - 1; i >= 0; i -= 1) store.sites.splice(snapshots[i].index, 1)
+  return snapshots
+}
+
+/** 撤销批量删除：按原索引升序放回 */
+export function restoreSites(snapshots) {
+  const sorted = [...(snapshots || [])].sort((a, b) => a.index - b.index)
+  for (const { site, index } of sorted) {
+    const at = Math.min(Math.max(index, 0), store.sites.length)
+    store.sites.splice(at, 0, site)
+  }
+}
+
 /** 同分类内上移 / 下移（dir: -1 上移，1 下移）；跳过其它分类的站点 */
 export function moveSite(id, dir) {
   const list = store.sites
@@ -521,16 +572,32 @@ export function applyAccent() {
   document.documentElement.dataset.accent = store.settings.accent || 'default'
 }
 
-/** 首屏一次性应用外观（主题 + 主色） */
+/** 卡片密度：写入 data-density，由 style.css 的 html[data-density=…] 调整卡片与网格 */
+export function applyDensity() {
+  document.documentElement.dataset.density = store.settings.density || 'comfortable'
+}
+
+/** 站点标题：同步到 <title> 与 PWA 名称（设置面板改名后标签页与主屏名称一起更新） */
+export function applyTitle() {
+  const title = store.settings.title || 'Nav-AI'
+  document.title = title
+  document.querySelector('meta[name="apple-mobile-web-app-title"]')?.setAttribute('content', title)
+}
+
+/** 首屏一次性应用外观（标题 + 主题 + 主色 + 密度） */
 export function applyAppearance() {
+  applyTitle()
   applyTheme()
   applyAccent()
+  applyDensity()
 }
 
 media.addEventListener('change', () => {
   if (store.settings.theme === 'auto') applyTheme()
 })
 
-// 主题 / 主色随数据自动应用：导入备份、恢复默认、设置面板等路径同样生效
+// 标题 / 主题 / 主色 / 密度随数据自动应用：导入备份、恢复默认、设置面板等路径同样生效
+watch(() => store.settings.title, applyTitle)
 watch(() => store.settings.theme, applyTheme)
 watch(() => store.settings.accent, applyAccent)
+watch(() => store.settings.density, applyDensity)

@@ -9,16 +9,18 @@
 - **分类管理**：支持两级分类（顶级分类 / 子分类），可自定义名称、图标（emoji）、排序（上移/下移）
 - **站点管理**：添加、编辑、删除一步到位；卡片包含名称、图标、描述、链接
 - **站点排序**：排序模式下拖拽卡片调整顺序（拖到其它分组即移动分类），并提供 ↑↓ 按钮供键盘与触屏使用
+- **批量管理**：批量模式下整卡可勾选，支持全选、批量移动分类、批量删除（可整批撤销）
 - **批量导入**：粘贴多行网址批量建条目；可直接导入浏览器导出的书签 HTML，按文件夹自动还原分类并去重
 - **命令面板式搜索**：按名称、描述、网址实时过滤，`/` 聚焦、`↑↓` 选择、`Enter` 打开
 - **智能图标**：图标可留空自动获取（默认先取站点自身 favicon，再走图标服务，全程 `no-referrer` 不回传来源），失败自动回退为彩色字母头像
-- **明暗主题与主色**：浅色 / 深色 / 跟随系统三态切换，无刷新闪烁；6 套主色预设一键切换，全站令牌自动跟随
+- **明暗主题与主色**：浅色 / 深色 / 跟随系统三态切换，无刷新闪烁；6 套主色预设、卡片密度与描述开关均可调
 - **删除可撤销**：删除站点或整棵分类后 6 秒内可一键撤销
-- **数据备份**：一键导出 / 导入 JSON，支持跨设备迁移；可恢复默认演示数据
+- **数据备份与分享**：一键导出 / 导入 JSON；可导出**只读分享页**（数据与样式全部内联、零外部请求，直接发给他人即可查看）
+- **可安装 / 离线可用（PWA）**：支持添加到主屏；Service Worker 做离线外壳（导航网络优先、静态资源缓存优先），数据本就在本地，离线打开功能完整
 - **数据自愈**：导入或历史数据中的失效分类会自动归入「未分类」并给出提示；存储写入失败会明确告警而不是静默丢弃
 - **多标签同步**：在多个标签页打开时自动保持一致
 - **响应式**：桌面端侧边栏布局，移动端抽屉式导航，触摸友好，适配安全区（刘海屏）
-- **无障碍**：键盘全程可达（卡片操作、弹窗焦点陷阱与焦点归还、跳过导航直达主内容）、可见焦点环、对比度达 WCAG AA、支持 `prefers-reduced-motion`
+- **无障碍**：键盘全程可达（卡片操作、弹窗焦点陷阱与焦点归还、跳过导航直达主内容）、可见焦点环、对比度达 WCAG AA、支持 `prefers-reduced-motion` 与强制高对比模式
 - **统一设计令牌**：色彩 / 字号 / 间距 / 圆角 / 阴影 / 动效全部走 CSS 变量，明暗主题与主色一键切换
 
 ## 技术栈
@@ -37,12 +39,12 @@
 ## 构建产物体积
 
 ```
-dist/index.html                   1.76 kB │ gzip:  0.91 kB
-dist/assets/style-*.css          30.10 kB │ gzip:  6.04 kB
-dist/assets/index-*.js          126.38 kB │ gzip: 45.65 kB
+dist/index.html                   2.11 kB │ gzip:  1.00 kB
+dist/assets/style-*.css          31.47 kB │ gzip:  6.29 kB
+dist/assets/index-*.js          136.34 kB │ gzip: 49.37 kB
 ```
 
-全部资源 gzip 后约 **52 KB**，无外部字体/依赖请求，首屏秒开。`npm run check` 内置体积闸门（CSS ≤ 6 kB / JS ≤ 48 kB，gzip）与其它 7 项工程断言。
+首屏全部资源 gzip 后约 **57 KB**（另有 PWA 图标 ~14 KB，按需加载），无外部字体/依赖请求。`npm run check` 内置体积闸门（CSS ≤ 6.5 kB / JS ≤ 52 kB，gzip）与其它 7 项工程断言。
 
 ## 本地开发
 
@@ -119,40 +121,51 @@ wrangler pages deploy dist --project-name=nav-ai
 
 ```
 Nav-AI/
-├── index.html                  # 入口 HTML（含主题/主色防闪烁脚本）
+├── index.html                  # 入口 HTML（主题/主色/密度防闪烁脚本、PWA 声明）
 ├── package.json
 ├── vite.config.js
 ├── public/
-│   └── favicon.svg             # 站点图标
+│   ├── favicon.svg             # 站点图标
+│   ├── manifest.webmanifest    # PWA 清单
+│   ├── sw.js                   # 离线外壳（Service Worker）
+│   └── icon-*.png              # 主屏图标（由 scripts/generate-icons.mjs 生成）
 ├── scripts/
-│   └── check.mjs               # 工程约束自检（零依赖）
+│   ├── check.mjs               # 工程约束自检（零依赖）
+│   └── generate-icons.mjs      # PWA 图标生成（零依赖）
 ├── tests/
-│   └── data.test.mjs           # 数据层单元测试（零依赖）
+│   ├── data.test.mjs           # 数据层单元测试（零依赖）
+│   └── view-logic.test.mjs     # 视图纯函数单元测试（搜索/分组/分享页）
 ├── src/
-│   ├── main.js                 # 应用入口（应用外观 + 挂载）
-│   ├── style.css               # 全局样式、设计令牌与主色预设
+│   ├── main.js                 # 应用入口（应用外观 + 挂载 + PWA 注册）
+│   ├── style.css               # 全局样式、设计令牌与主色/密度预设
 │   ├── store/
-│   │   └── data.js             # 数据层：分类树/站点 CRUD、归一化、版本迁移、持久化
+│   │   └── data.js             # 数据层：CRUD、归一化、版本迁移、持久化
+│   ├── composables/
+│   │   ├── useSiteSearch.js    # 命令面板式搜索状态
+│   │   └── useNavView.js       # 分类选中与分组视图
 │   ├── utils/
 │   │   ├── scroll-lock.js      # 滚动锁（引用计数）
 │   │   ├── toast.js            # 全局提示（含删除撤销）
 │   │   ├── drag.js             # 拖拽排序共享状态
-│   │   └── importers.js        # 批量添加 / 书签 HTML 解析
-│   ├── App.vue                 # 主布局、视图编排与全局快捷键
+│   │   ├── search.js           # 站点过滤（纯函数）
+│   │   ├── grouping.js         # 分组装配 / 分类扁平化（纯函数）
+│   │   ├── importers.js        # 批量添加 / 书签 HTML 解析
+│   │   └── export-page.js      # 只读分享页生成
+│   ├── App.vue                 # 主布局、模式编排与全局快捷键
 │   └── components/
 │       ├── TopBar.vue          # 顶栏：品牌/搜索/主题/数据/管理模式
-│       ├── SideBar.vue         # 侧边栏：分类树导航（移动端抽屉）+ 分类管理/设置入口
-│       ├── SiteCard.vue        # 站点卡片：图标回退链、排序模式、管理操作
+│       ├── SideBar.vue         # 侧边栏：分类树导航 + 分类管理/设置入口
+│       ├── SiteCard.vue        # 站点卡片：图标回退链、排序/批量/选中态
 │       ├── SiteModal.vue       # 站点添加（单个 / 批量）/ 编辑表单
 │       ├── CategoryModal.vue   # 分类管理（增删改/排序/子分类）
-│       ├── DataModal.vue       # 数据导入导出 / 书签导入 / 恢复默认
-│       ├── SettingsModal.vue   # 设置：标题 / 主题 / 主色 / 图标源
+│       ├── DataModal.vue       # 数据导入导出 / 书签导入 / 分享页 / 恢复默认
+│       ├── SettingsModal.vue   # 设置：标题 / 主题 / 主色 / 密度 / 描述 / 图标源
 │       ├── Modal.vue           # 通用弹窗外壳（焦点陷阱/归还/滚动锁）
 │       ├── ConfirmCard.vue     # 统一确认卡（替代原生 confirm）
 │       ├── EmptyState.vue      # 统一空状态
 │       ├── Toast.vue           # 全局提示条
 │       └── Icon.vue            # 功能图标（内联 SVG 路径表）
-└── docs/
+└── docs/                       # 本地文档（默认未纳入版本控制；如需随仓库分发，删掉 .gitignore 的 docs/ 一行）
     ├── usage.md                # 功能使用说明
     └── ui-audit-and-plan.md    # UI 审计、改造计划与实施记录
 ```

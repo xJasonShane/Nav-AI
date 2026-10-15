@@ -15,11 +15,15 @@ const props = defineProps({
   admin: { type: Boolean, default: false },
   /** 排序模式：卡片可拖拽，操作区换成 ↑↓ */
   order: { type: Boolean, default: false },
+  /** 批量模式：整卡作为可勾选目标 */
+  bulk: { type: Boolean, default: false },
+  /** 批量模式下的选中态 */
+  selected: { type: Boolean, default: false },
   /** 命令面板式搜索中的当前选中项 */
   active: { type: Boolean, default: false },
 })
 
-defineEmits(['edit', 'remove'])
+defineEmits(['edit', 'remove', 'toggle-select'])
 
 /** 字母头像配色板 */
 const PALETTE = ['#4f7cff', '#9b5cff', '#0ea5e9', '#f59e0b', '#10b981', '#ef4444', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316']
@@ -115,13 +119,27 @@ function onDrop() {
 <template>
   <article
     class="card"
-    :class="{ 'is-active': active, dragging, 'drop-target': isDropTarget, 'drop-after': isDropTarget && dropAfter }"
+    :class="{
+      'is-active': active,
+      'is-selected': bulk && selected,
+      dragging,
+      'drop-target': isDropTarget,
+      'drop-after': isDropTarget && dropAfter,
+    }"
+    :role="bulk ? 'checkbox' : undefined"
+    :aria-checked="bulk ? String(selected) : undefined"
+    :tabindex="bulk ? 0 : undefined"
     :draggable="order ? 'true' : 'false'"
+    @click="bulk && $emit('toggle-select')"
+    @keydown.space.prevent="bulk && $emit('toggle-select')"
+    @keydown.enter.prevent="bulk && $emit('toggle-select')"
     @dragstart="onDragStart"
     @dragover.prevent="onDragOver"
     @drop.prevent="onDrop"
     @dragend="resetDrag"
   >
+    <input v-if="bulk" class="pick" type="checkbox" :checked="selected" tabindex="-1" aria-hidden="true" />
+
     <span class="icon" aria-hidden="true">
       <img
         v-if="showImg"
@@ -140,11 +158,11 @@ function onDrop() {
 
     <span class="meta">
       <span class="name">{{ site.name }}</span>
-      <span class="desc">{{ site.desc || domain }}</span>
+      <span v-if="store.settings.showDesc" class="desc">{{ site.desc || domain }}</span>
     </span>
 
     <a
-      v-if="!order"
+      v-if="!order && !bulk"
       class="card-link"
       :href="site.url"
       target="_blank"
@@ -176,7 +194,7 @@ function onDrop() {
       </button>
     </span>
 
-    <span v-else-if="admin" class="ops">
+    <span v-else-if="admin && !bulk" class="ops">
       <button class="icon-btn-sm op" type="button" aria-label="编辑站点" title="编辑" @click="$emit('edit')">
         <Icon name="edit" />
       </button>
@@ -203,6 +221,42 @@ function onDrop() {
 
 .card[draggable='true'] {
   cursor: grab;
+}
+
+/* 批量模式：整卡可勾选 */
+.card[role='checkbox'] {
+  cursor: pointer;
+}
+
+.pick {
+  position: absolute;
+  top: var(--sp-3);
+  left: var(--sp-3);
+  z-index: 2;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  pointer-events: none;
+}
+
+.card[role='checkbox'] .icon {
+  margin-left: 22px;
+}
+
+.card.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-weak);
+}
+
+/* 紧凑密度：更小的卡片内边距与图标容器（由设置里的卡片密度驱动） */
+html[data-density='compact'] .card {
+  padding: var(--sp-2) var(--sp-3);
+  gap: var(--sp-2);
+}
+
+html[data-density='compact'] .icon {
+  width: 32px;
+  height: 32px;
 }
 
 .card:hover,

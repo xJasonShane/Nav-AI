@@ -499,6 +499,26 @@ textarea.field-input {
   background: transparent;
 }
 
+/* ============ 强制高对比（Windows 高对比 / forced-colors） ============ */
+@media (forced-colors: active) {
+  /* 渐变文字（background-clip:text + 透明字色）在该模式下会失去背景而不可读，回退为系统文字色 */
+  .brand-name,
+  .empty-title,
+  .stat b {
+    background: none !important;
+    color: CanvasText !important;
+  }
+
+  /* 选中 / 激活态原本靠底色与阴影区分，该模式会丢弃阴影，改补系统高亮描边 */
+  .nav-item.active,
+  .card.is-active,
+  .card.is-selected,
+  .seg-btn.active {
+    outline: 1px solid Highlight !important;
+    outline-offset: -1px;
+  }
+}
+
 /* ============ 动效降级 ============ */
 @media (prefers-reduced-motion: reduce) {
   *,

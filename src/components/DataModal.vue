@@ -4,6 +4,7 @@ import Modal from './Modal.vue'
 import ConfirmCard from './ConfirmCard.vue'
 import { store, exportJSON, importJSON, resetData, importSites } from '../store/data.js'
 import { parseBookmarksHTML } from '../utils/importers.js'
+import { buildSharePage } from '../utils/export-page.js'
 import { showToast } from '../utils/toast.js'
 
 const emit = defineEmits(['close'])
@@ -44,6 +45,22 @@ async function copyJSON() {
   } catch {
     notify('复制失败，请使用导出文件功能', 'err')
   }
+}
+
+/** 导出只读分享页：自包含 HTML，零外部请求，可直接发给他人 */
+function downloadSharePage() {
+  const html = buildSharePage({
+    title: store.settings.title,
+    categories: store.categories,
+    sites: store.sites,
+  })
+  const blob = new Blob([html], { type: 'text/html' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `nav-ai-share-${new Date().toISOString().slice(0, 10)}.html`
+  a.click()
+  URL.revokeObjectURL(a.href)
+  notify('分享页已开始下载，可直接转发')
 }
 
 /** 导入并提示结果（含被归入「未分类」的站点数） */
@@ -116,7 +133,9 @@ function doReset() {
       <div class="ops">
         <button class="btn btn-primary" type="button" @click="download">下载备份文件</button>
         <button class="btn btn-ghost" type="button" @click="copyJSON">复制到剪贴板</button>
+        <button class="btn btn-ghost" type="button" @click="downloadSharePage">导出只读分享页</button>
       </div>
+      <p class="hint">「只读分享页」是一份自包含的 HTML（数据与样式全部内联、不请求任何外部资源），适合直接发给他人或离线查看。</p>
     </section>
 
     <section class="sec">

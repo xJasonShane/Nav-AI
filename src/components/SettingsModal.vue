@@ -5,7 +5,7 @@
  * 因此没有「取消」语义，底部只保留「完成」。
  */
 import Modal from './Modal.vue'
-import { store, ACCENT_PRESETS } from '../store/data.js'
+import { store, ACCENT_PRESETS, DENSITIES } from '../store/data.js'
 
 const emit = defineEmits(['close'])
 
@@ -84,6 +84,51 @@ function normalizeTitle() {
           ></button>
         </div>
         <span class="hint">主色会同步影响按钮、激活态、焦点环与氛围光。</span>
+      </div>
+
+      <div class="field">
+        <span class="label">卡片密度</span>
+        <div class="seg" role="radiogroup" aria-label="卡片密度">
+          <button
+            v-for="d in DENSITIES"
+            :key="d.key"
+            class="seg-btn"
+            type="button"
+            role="radio"
+            :aria-checked="store.settings.density === d.key"
+            :class="{ active: store.settings.density === d.key }"
+            @click="store.settings.density = d.key"
+          >
+            {{ d.label }}
+          </button>
+        </div>
+      </div>
+
+      <div class="field">
+        <span class="label">卡片描述</span>
+        <div class="seg" role="radiogroup" aria-label="卡片描述">
+          <button
+            class="seg-btn"
+            type="button"
+            role="radio"
+            :aria-checked="store.settings.showDesc"
+            :class="{ active: store.settings.showDesc }"
+            @click="store.settings.showDesc = true"
+          >
+            显示
+          </button>
+          <button
+            class="seg-btn"
+            type="button"
+            role="radio"
+            :aria-checked="!store.settings.showDesc"
+            :class="{ active: !store.settings.showDesc }"
+            @click="store.settings.showDesc = false"
+          >
+            隐藏
+          </button>
+        </div>
+        <span class="hint">隐藏描述后卡片只保留名称与图标，适合站点很多的场景。</span>
       </div>
 
       <div class="field">

@@ -4,6 +4,7 @@ import Modal from './Modal.vue'
 import Icon from './Icon.vue'
 import { addSite, updateSite, store, findCategory, importSites } from '../store/data.js'
 import { parseSiteLines } from '../utils/importers.js'
+import { flattenCategories } from '../utils/grouping.js'
 import { showToast } from '../utils/toast.js'
 
 const props = defineProps({
@@ -38,16 +39,13 @@ const bulkText = ref('')
 const bulkError = ref('')
 
 /** 树形分类选项（缩进展示） */
-const options = computed(() => {
-  const list = []
-  for (const cat of store.categories) {
-    list.push({ id: cat.id, label: `${cat.icon || '📁'} ${cat.name}`, depth: 0 })
-    for (const child of cat.children || []) {
-      list.push({ id: child.id, label: `${child.icon || '📂'} ${child.name}`, depth: 1 })
-    }
-  }
-  return list
-})
+const options = computed(() =>
+  flattenCategories(store.categories).map((opt) => ({
+    id: opt.id,
+    depth: opt.depth,
+    label: `${opt.icon || (opt.depth ? '📂' : '📁')} ${opt.name}`,
+  }))
+)
 
 function submit() {
   error.name = form.name.trim() ? '' : '请输入站点名称'

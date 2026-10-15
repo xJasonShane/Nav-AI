@@ -14,20 +14,27 @@ import Toast from './components/Toast.vue'
 import Icon from './components/Icon.vue'
 import {
   store,
-  sitesOf,
   findCategory,
   removeSite,
   restoreSite,
+  moveSitesTo,
+  removeSites,
+  restoreSites,
   storageNotice,
   clearStorageNotice,
 } from './store/data.js'
 import { showToast } from './utils/toast.js'
+import { flattenCategories } from './utils/grouping.js'
+import { useSiteSearch } from './composables/useSiteSearch.js'
+import { useNavView } from './composables/useNavView.js'
 
 /* ------- 视图状态 ------- */
-const selectedId = ref(null) // null=全部 | 分类id | 'uncategorized'
-const query = ref('')
 const admin = ref(false)
 const orderMode = ref(false)
+const bulkMode = ref(false)
+/** 批量模式下已选中的站点 id */
+const selected = ref(new Set())
+const bulkTarget = ref('')
 const sidebarOpen = ref(false)
 const mainRef = ref(null)
 
@@ -38,118 +45,97 @@ const showDataModal = ref(false)
 const showSettingsModal = ref(false)
 const pendingSite = ref(null) // 待确认删除的站点
 
+/* ------- 视图逻辑（搜索 / 分组） ------- */
+const search = useSiteSearch(store.sites)
+const nav = useNavView()
+const { query, searching, results: searchResults, activeIndex, activeDescendant } = search
+const { selectedId, groups } = nav
+
+const categoryOptions = computed(() => flattenCategories(store.categories))
+
 /** 跳到主内容（skip link）：聚焦主区而不改变 URL */
 function focusMain() {
   mainRef.value?.focus()
 }
 
-/** 排序模式：进入时清空搜索（搜索结果不参与排序） */
+/** 排序 / 批量两种模式互斥，且进入时清空搜索（搜索结果不参与排序与批量选择） */
 function toggleOrder() {
   orderMode.value = !orderMode.value
-  if (orderMode.value) query.value = ''
+  if (orderMode.value) {
+    bulkMode.value = false
+    selected.value = new Set()
+    search.reset()
+  }
 }
 
-const searching = computed(() => query.value.trim().length > 0)
-
-/** 搜索结果 */
-const searchResults = computed(() => {
-  const q = query.value.trim().toLowerCase()
-  if (!q) return []
-  return store.sites.filter((s) =>
-    [s.name, s.desc, s.url].some((v) => (v || '').toLowerCase().includes(q))
-  )
-})
-
-/** 主区分组：[{ key, title, icon, sites, children: [{ key, title, icon, sites }] }] */
-const groups = computed(() => {
-  if (searching.value) return []
-  if (selectedId.value === 'uncategorized') {
-    return [{ key: 'uncat', title: '未分类', icon: '📥', sites: sitesOf(null), children: [] }]
+function toggleBulk() {
+  bulkMode.value = !bulkMode.value
+  selected.value = new Set()
+  if (bulkMode.value) {
+    orderMode.value = false
+    search.reset()
   }
-  if (selectedId.value) {
-    const cat = findCategory(selectedId.value)?.node
-    if (!cat) return []
-    return [
-      {
-        key: cat.id,
-        title: cat.name,
-        icon: cat.icon || '📁',
-        sites: sitesOf(cat.id),
-        children: (cat.children || []).map((c) => ({
-          key: c.id, title: c.name, icon: c.icon || '📂', sites: sitesOf(c.id),
-        })),
-      },
-    ]
-  }
-  // 全部视图
-  return store.categories.map((cat) => ({
-    key: cat.id,
-    title: cat.name,
-    icon: cat.icon || '📁',
-    sites: sitesOf(cat.id),
-    children: (cat.children || []).map((c) => ({
-      key: c.id, title: c.name, icon: c.icon || '📂', sites: sitesOf(c.id),
-    })),
-  }))
-})
-
-function findCat(id, list = store.categories) {
-  for (const n of list) {
-    if (n.id === id) return n
-    const hit = n.children?.length && findCat(id, n.children)
-    if (hit) return hit
-  }
-  return null
 }
-
-// 分类被删除后，若当前视图仍指向它，回退到「全部」：避免空态误导与向失效分类写入站点
-watch(
-  () => store.categories,
-  () => {
-    const id = selectedId.value
-    if (id !== null && id !== 'uncategorized' && !findCategory(id)) selectedId.value = null
-  },
-  { deep: true }
-)
 
 const selectedTitle = computed(() => {
   if (searching.value) return `搜索结果（${searchResults.value.length}）`
   if (selectedId.value === null) return '全部分类'
   if (selectedId.value === 'uncategorized') return '未分类'
-  return findCategory(selectedId.value)?.node?.name || ''
+  return nav.selectedCategory.value?.name || ''
 })
 
 function selectCategory(id) {
-  selectedId.value = id
-  query.value = ''
+  nav.select(id)
+  search.reset()
 }
 
-/** 搜索结果的当前选中项（命令面板式：↑↓ 选择，Enter 打开） */
-const activeIndex = ref(0)
+/* ------- 批量管理（F6） ------- */
 
-watch(searchResults, (list) => {
-  activeIndex.value = list.length ? 0 : -1
-})
+/** 当前视图可见的全部站点（批量选择的范围） */
+const visibleSites = computed(() =>
+  groups.value.flatMap((g) => [...g.sites, ...g.children.flatMap((c) => c.sites)])
+)
+const selectedCount = computed(() => selected.value.size)
+const allSelected = computed(
+  () => visibleSites.value.length > 0 && selectedCount.value === visibleSites.value.length
+)
 
-function moveActive(delta) {
-  const list = searchResults.value
-  if (!list.length) return
-  activeIndex.value = (activeIndex.value + delta + list.length) % list.length
-  const id = list[activeIndex.value]?.id
-  nextTick(() => document.getElementById(`search-opt-${id}`)?.scrollIntoView({ block: 'nearest' }))
+function toggleSelect(id) {
+  const next = new Set(selected.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selected.value = next
 }
 
-function openActive() {
-  const site = searchResults.value[activeIndex.value]
-  if (site) window.open(site.url, '_blank', 'noopener,noreferrer')
+function toggleSelectAll() {
+  selected.value = allSelected.value ? new Set() : new Set(visibleSites.value.map((s) => s.id))
 }
 
-/** 供搜索框声明 aria-activedescendant，读屏可跟随当前选中项 */
-const activeDescendant = computed(() => {
-  if (!searching.value || activeIndex.value < 0) return ''
-  const site = searchResults.value[activeIndex.value]
-  return site ? `search-opt-${site.id}` : ''
-})
+/** 批量移动：目标值 ''=占位、'__none'=未分类、其它为分类 id */
+function applyBulkMove() {
+  const target = bulkTarget.value
+  bulkTarget.value = ''
+  const ids = [...selected.value]
+  if (!ids.length || !target) return
+  const categoryId = target === '__none' ? null : target
+  const moved = moveSitesTo(ids, categoryId)
+  selected.value = new Set()
+  const name = categoryId ? findCategory(categoryId)?.node?.name || '所选分类' : '未分类'
+  showToast(`已把 ${moved} 个站点移动到「${name}」`)
+}
+
+/** 批量删除：整批可撤销 */
+function bulkDelete() {
+  const ids = [...selected.value]
+  if (!ids.length) return
+  const snapshots = removeSites(ids)
+  selected.value = new Set()
+  if (!snapshots.length) return
+  showToast(`已删除 ${snapshots.length} 个站点`, {
+    label: '撤销',
+    run: () => restoreSites(snapshots),
+  })
+}
 
 /** 删除站点：走统一确认卡（内嵌确认，替换原生 confirm） */
 function deleteSite(site) {
@@ -180,28 +166,30 @@ const overlayOpen = computed(
     !!pendingSite.value
 )
 
-/** "/" 聚焦搜索框；↑↓/Enter 在搜索结果间移动与打开；Esc 退出排序 / 清空搜索 */
+/** "/" 聚焦搜索框；↑↓/Enter 在搜索结果间移动与打开；Esc 退出排序/批量 / 清空搜索 */
 function onKey(e) {
   if (overlayOpen.value) return
   if (searching.value) {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      moveActive(1)
+      search.move(1)
       return
     }
     if (e.key === 'ArrowUp') {
       e.preventDefault()
-      moveActive(-1)
+      search.move(-1)
       return
     }
     if (e.key === 'Enter' && activeIndex.value >= 0) {
       e.preventDefault()
-      openActive()
+      search.open()
       return
     }
   }
-  if (e.key === 'Escape' && orderMode.value) {
+  if (e.key === 'Escape' && (orderMode.value || bulkMode.value)) {
     orderMode.value = false
+    bulkMode.value = false
+    selected.value = new Set()
     return
   }
   if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(e.target.tagName) && !e.target.isContentEditable) {
@@ -306,7 +294,17 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
               <Icon name="up" :stroke="2.2" />
               {{ orderMode ? '完成排序' : '排序' }}
             </button>
-            <button class="btn btn-ghost add-site-btn" type="button" @click="siteModal = { site: null, categoryId: selectedId === 'uncategorized' ? null : selectedId }">
+            <button
+              class="btn"
+              :class="bulkMode ? 'btn-primary' : 'btn-ghost'"
+              type="button"
+              :aria-pressed="bulkMode"
+              @click="toggleBulk"
+            >
+              <Icon name="check" :stroke="2.2" />
+              {{ bulkMode ? '完成批量' : '批量' }}
+            </button>
+            <button v-if="!orderMode && !bulkMode" class="btn btn-ghost add-site-btn" type="button" @click="siteModal = { site: null, categoryId: selectedId === 'uncategorized' ? null : selectedId }">
               <Icon name="plus" :stroke="2.2" />
               添加站点
             </button>
@@ -318,21 +316,56 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
           拖动卡片调整顺序（拖到其它分组即移动分类），或用卡片上的 ↑↓ 按钮；按 Esc 退出排序。
         </p>
 
+        <!-- 批量操作条 -->
+        <div v-if="bulkMode" class="bulk-bar" role="status">
+          <span class="bulk-count">已选 <b>{{ selectedCount }}</b> 项</span>
+          <button class="btn btn-ghost" type="button" @click="toggleSelectAll">
+            {{ allSelected ? '取消全选' : '全选本页' }}
+          </button>
+          <select
+            v-model="bulkTarget"
+            class="field-input bulk-select"
+            aria-label="批量移动到分类"
+            :disabled="!selectedCount"
+            @change="applyBulkMove"
+          >
+            <option value="">移动到分类…</option>
+            <option value="__none">未分类</option>
+            <option v-for="opt in categoryOptions" :key="opt.id" :value="opt.id">
+              {{ (opt.depth ? '　' : '') + opt.name }}
+            </option>
+          </select>
+          <button class="btn btn-danger-solid" type="button" :disabled="!selectedCount" @click="bulkDelete">
+            删除选中
+          </button>
+        </div>
+
         <template v-if="groups.some((g) => g.sites.length || g.children.some((c) => c.sites.length))">
           <section v-for="g in groups" :key="g.key" class="group">
             <template v-if="selectedId === null">
               <h2 class="group-title">
                 <span class="g-icon">{{ g.icon }}</span>{{ g.title }}
                 <span class="badge">{{ g.sites.length + g.children.reduce((n, c) => n + c.sites.length, 0) }}</span>
-                <button v-if="admin && !orderMode" class="g-add" type="button" title="添加站点到该分类" aria-label="添加站点到该分类" @click="siteModal = { site: null, categoryId: g.key }">
+                <button v-if="admin && !orderMode && !bulkMode" class="g-add" type="button" title="添加站点到该分类" aria-label="添加站点到该分类" @click="siteModal = { site: null, categoryId: g.key }">
                   <Icon name="plus" :stroke="2.2" />
                 </button>
               </h2>
             </template>
 
             <div v-if="g.sites.length || admin" class="grid">
-              <SiteCard v-for="s in g.sites" :key="s.id" :site="s" :admin="admin" :order="orderMode" @edit="siteModal = { site: s, categoryId: null }" @remove="deleteSite(s)" />
-              <button v-if="admin && !orderMode && g.key !== 'uncat'" class="add-card btn-dashed" type="button" @click="siteModal = { site: null, categoryId: g.key }">
+              <SiteCard
+                v-for="s in g.sites"
+                :key="s.id"
+                :site="s"
+                :admin="admin"
+                :order="orderMode"
+                :bulk="bulkMode"
+                :selected="selected.has(s.id)"
+                @edit="siteModal = { site: s, categoryId: null }"
+                @remove="deleteSite(s)"
+                @toggle-select="toggleSelect(s.id)"
+              />
+              <button v-if="admin && !orderMode && !bulkMode && g.key !== 'uncat'" class="add-card btn-dashed" type="button" @click="siteModal = { site: null, categoryId: g.key }">
                 <Icon name="plus" :stroke="2.2" />
                 添加站点
               </button>
@@ -342,12 +375,23 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
               <h3 v-if="child.sites.length" class="sub-title">
                 <span class="g-icon">{{ child.icon }}</span>{{ child.title }}
                 <span class="badge">{{ child.sites.length }}</span>
-                <button v-if="admin && !orderMode" class="g-add" type="button" title="添加站点到该子分类" aria-label="添加站点到该子分类" @click="siteModal = { site: null, categoryId: child.key }">
+                <button v-if="admin && !orderMode && !bulkMode" class="g-add" type="button" title="添加站点到该子分类" aria-label="添加站点到该子分类" @click="siteModal = { site: null, categoryId: child.key }">
                   <Icon name="plus" :stroke="2.2" />
                 </button>
               </h3>
               <div v-if="child.sites.length" class="grid">
-                <SiteCard v-for="s in child.sites" :key="s.id" :site="s" :admin="admin" :order="orderMode" @edit="siteModal = { site: s, categoryId: null }" @remove="deleteSite(s)" />
+                <SiteCard
+                  v-for="s in child.sites"
+                  :key="s.id"
+                  :site="s"
+                  :admin="admin"
+                  :order="orderMode"
+                  :bulk="bulkMode"
+                  :selected="selected.has(s.id)"
+                  @edit="siteModal = { site: s, categoryId: null }"
+                  @remove="deleteSite(s)"
+                  @toggle-select="toggleSelect(s.id)"
+                />
               </div>
             </div>
           </section>
@@ -362,7 +406,7 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
   </div>
 
   <!-- 悬浮添加按钮（管理模式 + 移动端友好） -->
-  <button v-if="admin && !searching && !orderMode" class="fab" type="button" title="添加站点" aria-label="添加站点" @click="siteModal = { site: null, categoryId: null }">
+  <button v-if="admin && !searching && !orderMode && !bulkMode" class="fab" type="button" title="添加站点" aria-label="添加站点" @click="siteModal = { site: null, categoryId: null }">
     <Icon name="plus" :size="22" :stroke="2.2" />
   </button>
 
@@ -489,16 +533,43 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
   flex-shrink: 0;
 }
 
-/* 排序模式提示条 */
-.order-hint {
+/* 模式提示条（排序 / 批量）：吸在顶栏下方，滚动时保持可见 */
+.order-hint,
+.bulk-bar {
+  position: sticky;
+  top: var(--topbar-h);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
   margin-bottom: var(--sp-4);
   padding: var(--sp-2) var(--sp-3);
-  border: 1px dashed var(--border-strong);
   border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+}
+
+.order-hint {
+  border: 1px dashed var(--border-strong);
   background: var(--accent-weak);
   color: var(--text-2);
-  font-size: var(--fs-sm);
   line-height: var(--lh-relaxed);
+}
+
+.bulk-bar {
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+
+.bulk-count {
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.bulk-select {
+  width: auto;
+  min-width: 150px;
+  height: var(--control-h-sm);
 }
 
 .add-site-btn {
@@ -573,6 +644,12 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   gap: var(--sp-3);
+}
+
+/* 紧凑密度：更小的卡片与更密的网格（由设置里的卡片密度驱动） */
+html[data-density='compact'] .grid {
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--sp-2);
 }
 
 .sub-group {

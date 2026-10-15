@@ -48,6 +48,9 @@ const {
   updateSite,
   removeSite,
   restoreSite,
+  moveSitesTo,
+  removeSites,
+  restoreSites,
   moveSite,
   moveSiteRelative,
   sitesOf,
@@ -57,9 +60,13 @@ const {
   removeCategory,
   restoreCategory,
   findCategory,
+  applyAppearance,
   applyExternalData,
   storageWarning,
 } = data
+
+// 模拟 main.js 的首屏外观应用（模块自身只在数据变化时驱动 DOM）
+applyAppearance()
 
 /** 每个用例从默认数据开始 */
 async function fresh() {
@@ -76,6 +83,18 @@ test('migrate：v1 → 当前版本补齐 settings 新字段，且不覆盖已�
   assert.equal(out.settings.theme, 'dark')
   assert.equal(out.settings.iconSource, 'auto')
   assert.equal(out.settings.accent, 'default')
+  assert.equal(out.settings.density, 'comfortable')
+  assert.equal(out.settings.showDesc, true)
+})
+
+test('migrate：v2 数据只跑 2 → 3 一步，且链式迁移幂等', () => {
+  const v2 = { version: 2, settings: { title: 'T', theme: 'light', accent: 'ocean' }, categories: [], sites: [] }
+  const out = migrate(v2)
+  assert.equal(out.version, DATA_VERSION)
+  assert.equal(out.settings.accent, 'ocean', '已有主色不应被覆盖')
+  assert.equal(out.settings.density, 'comfortable')
+  assert.equal(out.settings.showDesc, true)
+  assert.deepEqual(migrate(out), out)
 })
 
 test('migrate：无版本字段按 1 处理，且对当前版本数据幂等', () => {
@@ -281,6 +300,42 @@ test('导入数据后主题与主色立即落到 DOM', async () => {
   await nextTick()
   assert.equal(doc.documentElement.dataset.theme, 'light')
   assert.equal(doc.documentElement.dataset.accent, 'default')
+})
+
+test('密度与标题：设置变化后同步到 DOM 与文档标题', async () => {
+  await fresh()
+  assert.equal(doc.documentElement.dataset.density, 'comfortable')
+  assert.equal(doc.title, 'Nav-AI')
+
+  store.settings.density = 'compact'
+  store.settings.title = '我的导航'
+  await nextTick()
+  assert.equal(doc.documentElement.dataset.density, 'compact')
+  assert.equal(doc.title, '我的导航')
+
+  // 非法密度在归一化时回落默认值
+  const clean = normalizeData({ settings: { density: '乱填' }, categories: [], sites: [] })
+  assert.equal(clean.settings.density, 'comfortable')
+  assert.equal(normalizeData({ settings: { showDesc: false }, categories: [], sites: [] }).settings.showDesc, false)
+})
+
+/* ---------------- 批量管理（F6） ---------------- */
+
+test('批量移动 / 批量删除 / 整批撤销', async () => {
+  await fresh()
+  const ids = sitesOf('cat-media').map((s) => s.id)
+  assert.equal(moveSitesTo(ids, 'cat-ai'), 2)
+  assert.equal(sitesOf('cat-media').length, 0)
+  assert.equal(sitesOf('cat-ai').length, 4)
+
+  const snapshots = removeSites(sitesOf('cat-ai').map((s) => s.id))
+  assert.equal(snapshots.length, 4)
+  assert.equal(sitesOf('cat-ai').length, 0)
+  assert.ok(snapshots.every((s) => typeof s.index === 'number'))
+
+  restoreSites(snapshots)
+  assert.equal(sitesOf('cat-ai').length, 4, '撤销后应回到原分类')
+  assert.deepEqual(removeSites(['不存在']), [])
 })
 
 /* ---------------- 存储异常（B1） ---------------- */

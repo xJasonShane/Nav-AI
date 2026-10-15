@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Nav-AI" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="轻量级纯静态导航站 - 收藏与管理你的常用站点" />
     <meta name="theme-color" content="#f6f8fd" />
@@ -16,6 +20,7 @@
           var dark = t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
           document.documentElement.dataset.theme = dark ? 'dark' : 'light';
           document.documentElement.dataset.accent = (s.settings && s.settings.accent) || 'default';
+          document.documentElement.dataset.density = (s.settings && s.settings.density) || 'comfortable';
 
           var syncMeta = function () {
             var el = document.querySelector('meta[name="theme-color"]');

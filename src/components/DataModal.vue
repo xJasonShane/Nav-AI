@@ -178,7 +178,7 @@ function doReset() {
     <section class="sec">
       <h4>导入数据</h4>
       <p class="hint">粘贴备份 JSON 内容，或选择本地备份文件（将覆盖当前数据）。</p>
-      <textarea v-model="importText" class="field-input" rows="4" aria-label="粘贴备份 JSON" placeholder='{"version":1,"categories":[…],"sites":[…]}'></textarea>
+      <textarea v-model="importText" class="field-input" rows="4" aria-label="粘贴备份 JSON" placeholder='{"categories":[…],"sites":[…]}'></textarea>
       <div class="ops">
         <button class="btn btn-primary" type="button" :disabled="!importText.trim()" @click="doImportText">从文本导入</button>
         <button class="btn btn-ghost" type="button" @click="fileInput.click()">选择备份文件…</button>

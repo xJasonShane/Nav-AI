@@ -39,12 +39,17 @@
 ## 构建产物体积
 
 ```
-dist/index.html                   2.11 kB │ gzip:  1.00 kB
-dist/assets/style-*.css          31.47 kB │ gzip:  6.29 kB
-dist/assets/index-*.js          136.34 kB │ gzip: 49.37 kB
+dist/index.html                       2.11 kB │ gzip:  1.00 kB
+dist/assets/style-*.css              31.66 kB │ gzip:  6.33 kB
+dist/assets/index-*.js              117.56 kB │ gzip: 44.35 kB   # 首屏：入口 + 静态依赖
+dist/assets/SiteModal-*.js            5.54 kB │ gzip:  2.46 kB   # 以下均按需加载
+dist/assets/CategoryModal-*.js        8.03 kB │ gzip:  2.49 kB
+dist/assets/DataModal-*.js            9.07 kB │ gzip:  4.50 kB
+dist/assets/SettingsModal-*.js        4.08 kB │ gzip:  1.64 kB
+dist/assets/importers-*.js            1.30 kB │ gzip:  0.71 kB
 ```
 
-首屏全部资源 gzip 后约 **57 KB**（另有 PWA 图标 ~14 KB，按需加载），无外部字体/依赖请求。`npm run check` 内置体积闸门（CSS ≤ 6.5 kB / JS ≤ 52 kB，gzip）与其它 7 项工程断言。
+首屏全部资源 gzip 后约 **51 KB**（HTML + CSS + JS，另有 PWA 图标 ~14 KB），无外部字体/依赖请求。四个弹窗与书签/分享页解析按需加载，不进入首屏关键路径。`npm run check` 内置体积闸门（首屏 JS ≤ 52 kB / CSS ≤ 6.5 kB，gzip）与其它 10 项工程断言。
 
 ## 本地开发
 
@@ -58,18 +63,25 @@ npm run dev
 # 构建生产版本（输出到 dist/）
 npm run build
 
+# 子路径部署（如 GitHub Pages 项目页 /repo/）时指定 base
+VITE_BASE=/repo/ npm run build
+
 # 本地预览构建产物（默认 http://localhost:4173）
 npm run preview
 
-# 数据层单元测试（Node 内置 runner，零依赖）
+# 数据层与视图纯函数单元测试（Node 内置 runner，零依赖）
 npm test
 
+# 附带覆盖率的测试（仅统计被 import 的模块）
+npm run test:coverage
+
 # 工程约束自检：设计令牌收口 / 品牌色 / v-html 与原生 confirm / 依赖白名单 /
-# 构建特性标志 / STORAGE_KEY 口径 / 图标集中维护 / 产物体积预算
+# 构建特性标志 / STORAGE_KEY 口径 / 图标集中维护 / 主色预设一致性 /
+# console.log 残留 / SFC scoped / 首屏体积预算
 npm run check
 ```
 
-> 提交前建议执行 `npm run build && npm test && npm run check`。
+> 提交前建议执行 `npm run build && npm test && npm run check`；CI（`.github/workflows/ci.yml`）也会在 push / PR 时执行同样三步。
 
 ## 部署到 Cloudflare Pages
 
@@ -111,7 +123,7 @@ wrangler pages deploy dist --project-name=nav-ai
 
 本产物为纯静态资源，同样适用于：
 
-- **GitHub Pages**：push `dist` 到 `gh-pages` 分支（可用 `gh-pages` 包或 Actions 自动化）
+- **GitHub Pages**：项目页部署在 `/<repo>/` 子路径，必须先 `VITE_BASE=/<repo>/ npm run build` 再发布 `dist`（否则图标、PWA 清单与 Service Worker 会 404）；用户页（`<user>.github.io` 根路径）按默认构建即可
 - **Vercel / Netlify**：Framework 选 Vite，Build `npm run build`，Output `dist`
 - **任意对象存储 / Nginx / CDN**：将 `dist` 目录内容上传即可
 
@@ -124,34 +136,39 @@ Nav-AI/
 ├── index.html                  # 入口 HTML（主题/主色/密度防闪烁脚本、PWA 声明）
 ├── package.json
 ├── vite.config.js
+├── .github/workflows/ci.yml    # CI：build + test + check（push / PR）
 ├── public/
 │   ├── favicon.svg             # 站点图标
-│   ├── manifest.webmanifest    # PWA 清单
-│   ├── sw.js                   # 离线外壳（Service Worker）
+│   ├── manifest.webmanifest    # PWA 清单（相对路径，支持子路径部署）
+│   ├── sw.js                   # 离线外壳（预缓存首屏资源 + 版本清理）
 │   └── icon-*.png              # 主屏图标（由 scripts/generate-icons.mjs 生成）
 ├── scripts/
 │   ├── check.mjs               # 工程约束自检（零依赖）
 │   └── generate-icons.mjs      # PWA 图标生成（零依赖）
 ├── tests/
 │   ├── data.test.mjs           # 数据层单元测试（零依赖）
-│   └── view-logic.test.mjs     # 视图纯函数单元测试（搜索/分组/分享页）
+│   └── view-logic.test.mjs     # 视图纯函数单元测试（搜索/分组/分享页/URL）
 ├── src/
-│   ├── main.js                 # 应用入口（应用外观 + 挂载 + PWA 注册）
+│   ├── main.js                 # 应用入口（外观 + 错误兜底 + PWA 注册与更新提示）
 │   ├── style.css               # 全局样式、设计令牌与主色/密度预设
 │   ├── store/
-│   │   └── data.js             # 数据层：CRUD、归一化、版本迁移、持久化
+│   │   └── data.js             # 数据层：CRUD、归一化、版本迁移、节流持久化
 │   ├── composables/
 │   │   ├── useSiteSearch.js    # 命令面板式搜索状态
 │   │   └── useNavView.js       # 分类选中与分组视图
 │   ├── utils/
 │   │   ├── scroll-lock.js      # 滚动锁（引用计数）
+│   │   ├── focus-trap.js       # 焦点陷阱（弹窗与移动端抽屉共用）
 │   │   ├── toast.js            # 全局提示（含删除撤销）
+│   │   ├── errors.js           # 运行时异常收集（提示条展示）
 │   │   ├── drag.js             # 拖拽排序共享状态
-│   │   ├── search.js           # 站点过滤（纯函数）
+│   │   ├── favicon.js          # 图标解析结果的会话缓存
+│   │   ├── url.js              # URL 协议白名单与表单校验
+│   │   ├── search.js           # 站点检索与相关性排序（纯函数）
 │   │   ├── grouping.js         # 分组装配 / 分类扁平化（纯函数）
 │   │   ├── importers.js        # 批量添加 / 书签 HTML 解析
 │   │   └── export-page.js      # 只读分享页生成
-│   ├── App.vue                 # 主布局、模式编排与全局快捷键
+│   ├── App.vue                 # 主布局、模式编排与全局快捷键（弹窗按需加载）
 │   └── components/
 │       ├── TopBar.vue          # 顶栏：品牌/搜索/主题/数据/管理模式
 │       ├── SideBar.vue         # 侧边栏：分类树导航 + 分类管理/设置入口
@@ -173,7 +190,7 @@ Nav-AI/
 ## 数据说明
 
 - 所有数据存储在浏览器 `localStorage`，键名 `nav-ai-data-v1`，仅保存在当前浏览器中
-- 数据结构：`categories`（两级分类树）+ `sites`（站点集合）+ `settings`（标题、主题、主色、图标源）+ `version`（当前为 `2`）
+- 数据结构：`categories`（两级分类树）+ `sites`（站点集合）+ `settings`（标题、主题、主色、图标源、密度、描述开关）+ `version`（数据版本号，加载与导入时自动迁移到当前版本）
 - 旧版本备份（`version: 1`）无需处理：加载与导入时会自动升级版本并补齐缺省字段，失效分类的站点会归入「未分类」并提示
 - 换设备/换浏览器时，通过右上角「数据管理」导出 JSON，在新设备导入即可完整迁移；也可以直接导入浏览器书签 HTML
 - 修改站点标题：点击侧边栏底部「设置」（或直接编辑 `src/store/data.js` 中的 `defaultData()`）

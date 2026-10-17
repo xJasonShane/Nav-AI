@@ -1,17 +1,19 @@
 <script setup>
-import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, defineAsyncComponent } from 'vue'
 import TopBar from './components/TopBar.vue'
 import SideBar from './components/SideBar.vue'
 import SiteCard from './components/SiteCard.vue'
-import SiteModal from './components/SiteModal.vue'
-import CategoryModal from './components/CategoryModal.vue'
-import DataModal from './components/DataModal.vue'
-import SettingsModal from './components/SettingsModal.vue'
 import Modal from './components/Modal.vue'
 import ConfirmCard from './components/ConfirmCard.vue'
 import EmptyState from './components/EmptyState.vue'
 import Toast from './components/Toast.vue'
 import Icon from './components/Icon.vue'
+
+// 低频弹窗按需加载：不进入首屏关键路径。Modal 保持同步——删除确认要在点击后立即出现
+const SiteModal = defineAsyncComponent(() => import('./components/SiteModal.vue'))
+const CategoryModal = defineAsyncComponent(() => import('./components/CategoryModal.vue'))
+const DataModal = defineAsyncComponent(() => import('./components/DataModal.vue'))
+const SettingsModal = defineAsyncComponent(() => import('./components/SettingsModal.vue'))
 import {
   store,
   categoryIndex,
@@ -25,6 +27,7 @@ import {
   clearStorageNotice,
 } from './store/data.js'
 import { showToast } from './utils/toast.js'
+import { runtimeError, clearRuntimeError } from './utils/errors.js'
 import { draggingId, resetDrag } from './utils/drag.js'
 import { flattenCategories } from './utils/grouping.js'
 import { useSiteSearch } from './composables/useSiteSearch.js'
@@ -234,6 +237,14 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
 
 const totalSites = computed(() => store.sites.length)
 const isEmpty = computed(() => !searching.value && totalSites.value === 0)
+
+/** 顶栏提示：存储异常优先，其次是运行时异常 */
+const noticeText = computed(() => storageNotice.value || runtimeError.value)
+
+function dismissNotice() {
+  if (storageNotice.value) clearStorageNotice()
+  else clearRuntimeError()
+}
 </script>
 
 <template>
@@ -256,11 +267,11 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
     @toggle-sidebar="sidebarOpen = !sidebarOpen"
   />
 
-  <!-- 存储异常提示（读取失败 / 写入失败），可关闭 -->
-  <div v-if="storageNotice" class="notice" role="alert">
+  <!-- 存储异常 / 运行时异常提示，可关闭 -->
+  <div v-if="noticeText" class="notice" role="alert">
     <Icon name="warn" :size="15" />
-    <span>{{ storageNotice }}</span>
-    <button class="icon-btn-sm notice-close" type="button" aria-label="关闭提示" @click="clearStorageNotice">
+    <span>{{ noticeText }}</span>
+    <button class="icon-btn-sm notice-close" type="button" aria-label="关闭提示" @click="dismissNotice">
       <Icon name="close" />
     </button>
   </div>

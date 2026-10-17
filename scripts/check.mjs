@@ -7,7 +7,10 @@
  *  5) 构建特性标志必须保留（Vue Options API / DEVTOOLS 关闭）
  *  6) STORAGE_KEY 口径一致（index.html 内联脚本与数据层）
  *  7) 功能图标集中维护：已收口的路径不得再复制回组件
- *  8) 产物体积预算（需先 npm run build，缺失则跳过）
+ *  8) 主色预设与样式表一致（data.js 的 ACCENT_PRESETS ↔ style.css 的 data-accent 选择器）
+ *  9) 无 console.log 残留
+ * 10) SFC 的 <style> 必须 scoped（避免样式泄漏到全局）
+ * 11) 产物体积预算（需先 npm run build，缺失则跳过）
  *
  * 约定来源：docs/ui-audit-and-plan.md 第 5 / 7 节与 MEMORY.md 的硬性约定。
  */
@@ -29,6 +32,7 @@ const readLines = (file) =>
  *   - 批次 2（F1 排序 / F2 命令面板 / F4 批量与书签导入 / F5 设置）：CSS 经等量去重后维持 6 kB，JS → 48 kB
  *   - 批次 3（F6 批量管理 / F8 PWA / F9 分享页 / F10 密度与描述开关 / E4 强制高对比 / C5 逻辑分层）：
  *     CSS → 6.5 kB，JS → 52 kB
+ *   - 批次 S2（弹窗按需加载）：JS 改为「入口 + 静态依赖」的首屏口径，按需 chunk 不计入
  * 当前实测值见每次输出（余量会一并打印）。
  */
 const BUDGET = { css: 6.5 * 1024, js: 52 * 1024 }
@@ -155,18 +159,87 @@ check('功能图标集中维护（Icon.vue）', () => {
   return bad
 })
 
-check('产物体积预算（CSS ≤ 6.5 kB / JS ≤ 52 kB，gzip）', () => {
+check('主色预设与样式表一致（data.js ↔ style.css）', () => {
+  const block = read('src/store/data.js').match(/ACCENT_PRESETS\s*=\s*\[([\s\S]*?)\n\]/)?.[1] || ''
+  const jsKeys = [...block.matchAll(/key:\s*'([^']+)'/g)].map((m) => m[1])
+  const cssKeys = [...read('src/style.css').matchAll(/html\[data-accent='([^']+)'\]/g)].map((m) => m[1])
+  const bad = []
+  if (!jsKeys.length) return ['data.js 未解析到 ACCENT_PRESETS']
+
+  // 默认主色由 :root 提供，不需要 data-accent 选择器
+  const expected = jsKeys.filter((key) => key !== 'default')
+  const missing = expected.filter((key) => !cssKeys.includes(key))
+  const extra = cssKeys.filter((key) => !expected.includes(key))
+  if (missing.length) bad.push(`style.css 缺少主色选择器：${missing.join(', ')}`)
+  if (extra.length) bad.push(`style.css 存在未登记的主色选择器：${extra.join(', ')}`)
+  return bad
+})
+
+check('无 console.log 残留', () => {
+  const bad = []
+  for (const file of srcFiles.filter((f) => ['.js', '.vue'].includes(extname(f)))) {
+    for (const { no, text } of readLines(file)) {
+      if (/console\.log\s*\(/.test(text)) bad.push(`${rel(file)}:${no} 请移除 console.log`)
+    }
+  }
+  return bad
+})
+
+check('SFC 样式必须 scoped', () => {
+  const bad = []
+  for (const file of vueFiles) {
+    const text = readFileSync(file, 'utf8')
+    for (const tag of text.matchAll(/<style([^>]*)>/g)) {
+      if (!/\bscoped\b/.test(tag[1])) bad.push(`${rel(file)} 存在未 scoped 的 <style> 块`)
+    }
+  }
+  return bad
+})
+
+check('产物体积预算（首屏 JS ≤ 52 kB / CSS ≤ 6.5 kB，gzip）', () => {
   const dir = join(ROOT, 'dist', 'assets')
   if (!existsSync(dir)) return [] // 未构建时跳过
-  const files = readdirSync(dir).filter((f) => ['.css', '.js'].includes(extname(f)))
+
   const bad = []
-  for (const name of files) {
+
+  // CSS 仍是单文件（cssCodeSplit: false）
+  for (const name of readdirSync(dir).filter((f) => extname(f) === '.css')) {
     const gz = gzipSync(readFileSync(join(dir, name))).length
-    const limit = extname(name) === '.css' ? BUDGET.css : BUDGET.js
-    const tag = `${name} gzip ${(gz / 1024).toFixed(2)} kB / 预算 ${(limit / 1024).toFixed(2)} kB`
-    if (gz > limit) bad.push(`超预算：${tag}`)
-    else console.log(`    ${tag}（余量 ${((limit - gz) / 1024).toFixed(2)} kB）`)
+    const tag = `${name} gzip ${(gz / 1024).toFixed(2)} kB / 预算 ${(BUDGET.css / 1024).toFixed(2)} kB`
+    if (gz > BUDGET.css) bad.push(`超预算：${tag}`)
+    else console.log(`    ${tag}（余量 ${((BUDGET.css - gz) / 1024).toFixed(2)} kB）`)
   }
+
+  // JS 只统计「入口 chunk + 静态依赖」：按需加载的弹窗 chunk 属于交互后资源，不计入首屏
+  const manifestPath = join(ROOT, 'dist', '.vite', 'manifest.json')
+  if (!existsSync(manifestPath)) {
+    return [...bad, '缺少 dist/.vite/manifest.json（需在 vite.config.js 开启 build.manifest 后重新构建）']
+  }
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  const entryKey = Object.keys(manifest).find((key) => manifest[key].isEntry)
+  if (!entryKey) return [...bad, 'manifest 中未找到入口 chunk']
+
+  const seen = new Set()
+  const collect = (key) => {
+    if (!key || seen.has(key) || !manifest[key]) return
+    seen.add(key)
+    for (const dep of manifest[key].imports || []) collect(dep)
+  }
+  collect(entryKey)
+
+  let total = 0
+  let jsFiles = 0
+  for (const key of seen) {
+    const file = manifest[key].file
+    if (!file || extname(file) !== '.js') continue
+    total += gzipSync(readFileSync(join(ROOT, 'dist', file))).length
+    jsFiles += 1
+  }
+
+  const tag = `首屏 JS（${jsFiles} 个文件）gzip ${(total / 1024).toFixed(2)} kB / 预算 ${(BUDGET.js / 1024).toFixed(2)} kB`
+  if (total > BUDGET.js) bad.push(`超预算：${tag}`)
+  else console.log(`    ${tag}（余量 ${((BUDGET.js - total) / 1024).toFixed(2)} kB）`)
+
   return bad
 })
 

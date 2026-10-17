@@ -8,6 +8,7 @@
 import { ref, computed, watch } from 'vue'
 import Icon from './Icon.vue'
 import { store, sitesOf, moveSite, moveSiteRelative } from '../store/data.js'
+import { isHttpUrl } from '../utils/url.js'
 import { draggingId, dropTargetId, dropAfter, resetDrag } from '../utils/drag.js'
 
 const props = defineProps({
@@ -53,6 +54,9 @@ const sources = computed(() => {
 
 const currentSrc = computed(() => sources.value[step.value] || '')
 const showImg = computed(() => !iconFailed.value && !!currentSrc.value)
+
+/** 只有合法 http(s) 才渲染整卡链接：空值或伪协议会让卡片不可点击（避免 href="" 刷新当前页） */
+const linkReady = computed(() => !props.order && !props.bulk && isHttpUrl(props.site.url))
 
 // 站点被编辑、或图标源设置变化后重置回退链：否则上一次的失败结果会被永久沿用，
 // 用户补填图标地址后仍只显示字母头像，必须刷新才恢复
@@ -162,7 +166,7 @@ function onDrop() {
     </span>
 
     <a
-      v-if="!order && !bulk"
+      v-if="linkReady"
       class="card-link"
       :href="site.url"
       target="_blank"

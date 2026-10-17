@@ -62,6 +62,8 @@ const {
   findCategory,
   applyAppearance,
   applyExternalData,
+  captureSnapshot,
+  restoreSnapshot,
   storageWarning,
 } = data
 
@@ -138,6 +140,46 @@ test('normalizeData：补字段、去非法、id 去重、两级截断、失效�
 })
 
 /* ---------------- 导入导出 ---------------- */
+
+test('normalizeData：非 http(s) 协议一律置空，伪协议无法进入卡片链接', () => {
+  const clean = normalizeData({
+    categories: [{ id: 'c1', name: 'C' }],
+    sites: [
+      { name: '正常', url: 'https://ok.example/path' },
+      { name: '脚本', url: 'javascript:alert(1)' },
+      { name: '数据', url: 'data:text/html,<script>alert(1)</script>' },
+      { name: '相对路径', url: '/relative' },
+      { name: '空白', url: '   ' },
+    ],
+  })
+  assert.deepEqual(
+    clean.sites.map((s) => s.url),
+    ['https://ok.example/path', '', '', '', ''],
+    '只有 http(s) 可以落库，其余统一置空'
+  )
+})
+
+test('captureSnapshot / restoreSnapshot：覆盖式导入可完整回滚', async () => {
+  await fresh()
+  const siteCount = store.sites.length
+  const catCount = store.categories.length
+  const snapshot = captureSnapshot()
+
+  importJSON(
+    JSON.stringify({
+      categories: [{ id: 'only', name: '唯一分类' }],
+      sites: [{ name: '唯一站点', url: 'https://only.example', categoryId: 'only' }],
+    })
+  )
+  assert.equal(store.sites.length, 1)
+  assert.equal(store.categories.length, 1)
+
+  assert.equal(restoreSnapshot(snapshot), true)
+  assert.equal(store.sites.length, siteCount)
+  assert.equal(store.categories.length, catCount)
+  assert.ok(store.sites.some((s) => s.name === 'GitHub'), '站点内容应完整还原')
+  assert.equal(restoreSnapshot(null), false, '空快照应安全返回 false')
+})
 
 test('importJSON：归一化 + 统计返回，且导出可往返', () => {
   const res = importJSON(

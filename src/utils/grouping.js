@@ -32,7 +32,14 @@ export function buildGroups({ categories, sitesOf, selectedId, findNode }) {
     return node ? [toGroup(node)] : []
   }
 
-  return (categories || []).map(toGroup)
+  const groups = (categories || []).map(toGroup)
+  // 「全部分类」视图必须同样展示未分类站点：否则删除分类后站点会从浏览视图消失
+  // （搜索仍能命中，但用户会误以为数据丢失）
+  const uncategorized = sitesOf(null)
+  if (uncategorized.length) {
+    groups.push({ key: 'uncat', title: '未分类', icon: '📥', sites: uncategorized, children: [] })
+  }
+  return groups
 }
 
 /**

@@ -2,6 +2,7 @@
  * 只读分享页导出（F9）：把当前导航数据生成一份自包含 HTML。
  * 特点：零外部请求（图标用字母头像）、数据全部内联、样式内联，可直接发给别人或用浏览器打开。
  */
+import { safeHttpUrl } from './url.js'
 
 const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
 
@@ -10,12 +11,7 @@ export function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (ch) => ESCAPES[ch])
 }
 
-/** 仅保留 http(s) 链接，避免 javascript:/data: 之类的伪协议进入分享页 */
-function safeUrl(url) {
-  const value = String(url || '').trim()
-  return /^https?:\/\//i.test(value) ? value : ''
-}
-
+/** 从 URL 取域名（去掉 www.），解析失败返回空串 */
 function domainOf(url) {
   try {
     return new URL(url).hostname.replace(/^www\./, '')
@@ -35,7 +31,7 @@ function avatarColor(name) {
 }
 
 function cardHtml(site) {
-  const url = safeUrl(site.url)
+  const url = safeHttpUrl(site.url)
   const name = escapeHtml(site.name || domainOf(site.url) || '未命名')
   if (!url) return ''
   const desc = escapeHtml(site.desc || domainOf(url))

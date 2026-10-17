@@ -87,6 +87,9 @@ const selectedTitle = computed(() => {
 function selectCategory(id) {
   nav.select(id)
   search.reset()
+  // 批量模式下切换分类：旧选中项已不可见，必须清空，否则「已选 N 项」与实际不符，
+  // 且批量移动/删除会作用到看不见的站点
+  if (selected.value.size) selected.value = new Set()
 }
 
 /* ------- 批量管理（F6） ------- */
@@ -397,7 +400,8 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
           </section>
         </template>
 
-        <EmptyState v-else-if="selectedId !== null" icon="📭" desc="该分类下还没有站点">
+        <!-- 兜底空状态：任何「没有可渲染分组」的情况都不允许留下纯空白主区 -->
+        <EmptyState v-else icon="📭" desc="该分类下还没有站点">
           <button v-if="admin" class="btn btn-primary" type="button" @click="siteModal = { site: null, categoryId: selectedId === 'uncategorized' ? null : selectedId }">添加站点</button>
           <button v-else class="btn btn-ghost" type="button" @click="admin = true">开启管理模式去添加</button>
         </EmptyState>

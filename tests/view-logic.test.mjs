@@ -35,13 +35,24 @@ test('filterSites：空查询返回空数组，命中名称/描述/网址，忽�
 
 test('buildGroups：全部 / 未分类 / 指定分类 / 失效分类', () => {
   const all = buildGroups({ categories: CATEGORIES, sitesOf, selectedId: null, findNode })
-  assert.equal(all.length, 2)
+  assert.equal(all.length, 3, '「全部分类」应包含未分类分组')
   assert.equal(all[0].title, '开发')
   assert.equal(all[0].icon, '💻')
   assert.equal(all[0].sites.length, 2)
   assert.equal(all[0].children.length, 1)
   assert.equal(all[0].children[0].icon, '📂', '子分类缺图标时用默认 emoji')
   assert.equal(all[1].icon, '📁', '顶级分类缺图标时用默认 emoji')
+  assert.equal(all[2].key, 'uncat')
+  assert.equal(all[2].title, '未分类')
+  assert.deepEqual(all[2].sites.map((s) => s.id), ['s4'], '未分类站点必须出现在全部视图末尾')
+
+  const noUncategorized = buildGroups({
+    categories: CATEGORIES,
+    sitesOf: (id) => (id === null ? [] : sitesOf(id)),
+    selectedId: null,
+    findNode,
+  })
+  assert.equal(noUncategorized.length, 2, '没有未分类站点时不追加空分组')
 
   const uncategorized = buildGroups({ categories: CATEGORIES, sitesOf, selectedId: 'uncategorized', findNode })
   assert.equal(uncategorized.length, 1)
@@ -53,7 +64,15 @@ test('buildGroups：全部 / 未分类 / 指定分类 / 失效分类', () => {
   assert.equal(one[0].key, 'c1')
 
   assert.deepEqual(buildGroups({ categories: CATEGORIES, sitesOf, selectedId: 'ghost', findNode }), [], '失效分类返回空')
-  assert.deepEqual(buildGroups({ categories: [], sitesOf, selectedId: null, findNode }), [])
+
+  const noCategories = buildGroups({ categories: [], sitesOf, selectedId: null, findNode })
+  assert.equal(noCategories.length, 1, '分类被删光时仍应展示未分类站点，而不是留白')
+  assert.equal(noCategories[0].key, 'uncat')
+  assert.deepEqual(
+    buildGroups({ categories: [], sitesOf: () => [], selectedId: null, findNode }),
+    [],
+    '完全没有站点时返回空数组（由上层空状态兜底）'
+  )
 })
 
 test('flattenCategories：两级展开且带 depth，供下拉选择使用', () => {

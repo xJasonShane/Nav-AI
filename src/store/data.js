@@ -7,6 +7,7 @@
  *   version:    当前 DATA_VERSION；旧数据经 migrate() 升级后再归一化
  */
 import { computed, reactive, ref, watch } from 'vue'
+import { safeHttpUrl } from '../utils/url.js'
 
 const STORAGE_KEY = 'nav-ai-data-v1'
 /** 数据损坏时的旁路备份键：避免被默认数据的首次写回覆盖，保留可人工恢复的现场 */
@@ -159,7 +160,9 @@ export function normalizeData(input) {
       return {
         id,
         name: s.name.trim(),
-        url: typeof s.url === 'string' ? s.url : '',
+        // 只接受 http(s)：伪协议（javascript: / data:）与相对地址一律置空，
+        // 卡片据此不再渲染链接，避免导入内容变成可执行入口
+        url: safeHttpUrl(s.url),
         desc: typeof s.desc === 'string' ? s.desc : '',
         icon: typeof s.icon === 'string' ? s.icon : '',
         categoryId: valid ? s.categoryId : null,
@@ -476,6 +479,25 @@ export function importJSON(text) {
   const { settings, categories, sites, moved } = normalizeData(migrate(parsed))
   Object.assign(store, { version: DATA_VERSION, settings, categories, sites })
   return { categories: categories.length, sites: sites.length, moved }
+}
+
+/**
+ * 数据快照：覆盖式操作（导入 / 恢复默认）前的回滚点。
+ * 返回纯对象副本，后续 store 变更不会污染快照内容。
+ */
+export function captureSnapshot() {
+  return JSON.parse(JSON.stringify(store))
+}
+
+/**
+ * 用快照整体替换当前数据（撤销导入 / 撤销恢复默认）。
+ * 走与加载一致的 migrate + normalizeData，保证回滚后的结构仍然合法。
+ */
+export function restoreSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return false
+  const { settings, categories, sites } = normalizeData(migrate(snapshot))
+  Object.assign(store, { version: DATA_VERSION, settings, categories, sites })
+  return true
 }
 
 /* ---------------- 批量导入（粘贴多行 / 浏览器书签） ---------------- */

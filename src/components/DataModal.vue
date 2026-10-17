@@ -1,8 +1,16 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onBeforeUnmount } from 'vue'
 import Modal from './Modal.vue'
 import ConfirmCard from './ConfirmCard.vue'
-import { store, exportJSON, importJSON, resetData, importSites } from '../store/data.js'
+import {
+  store,
+  exportJSON,
+  importJSON,
+  resetData,
+  importSites,
+  captureSnapshot,
+  restoreSnapshot,
+} from '../store/data.js'
 import { parseBookmarksHTML } from '../utils/importers.js'
 import { buildSharePage } from '../utils/export-page.js'
 import { showToast } from '../utils/toast.js'
@@ -22,19 +30,33 @@ const stats = computed(() => {
   return { cats: store.categories.length, subs, sites: store.sites.length }
 })
 
+/** 面板内结果提示：同一时间只保留最新一条（旧定时器必须清掉，否则会提前抹掉新消息） */
+let messageTimer = 0
+
 function notify(text, type = 'ok') {
   message.value = text
   messageType.value = type
-  setTimeout(() => (message.value = ''), 3000)
+  clearTimeout(messageTimer)
+  messageTimer = setTimeout(() => (message.value = ''), 3000)
+}
+
+onBeforeUnmount(() => clearTimeout(messageTimer))
+
+/** 统一下载：延迟释放 Blob URL，避免 Safari / 部分 WebView 在 click() 后立即 revoke 导致下载被取消 */
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 function download() {
-  const blob = new Blob([exportJSON()], { type: 'application/json' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = `nav-ai-backup-${new Date().toISOString().slice(0, 10)}.json`
-  a.click()
-  URL.revokeObjectURL(a.href)
+  triggerDownload(
+    new Blob([exportJSON()], { type: 'application/json' }),
+    `nav-ai-backup-${new Date().toISOString().slice(0, 10)}.json`
+  )
   notify('备份文件已开始下载')
 }
 
@@ -54,21 +76,29 @@ function downloadSharePage() {
     categories: store.categories,
     sites: store.sites,
   })
-  const blob = new Blob([html], { type: 'text/html' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = `nav-ai-share-${new Date().toISOString().slice(0, 10)}.html`
-  a.click()
-  URL.revokeObjectURL(a.href)
+  triggerDownload(
+    new Blob([html], { type: 'text/html' }),
+    `nav-ai-share-${new Date().toISOString().slice(0, 10)}.html`
+  )
   notify('分享页已开始下载，可直接转发')
 }
 
-/** 导入并提示结果（含被归入「未分类」的站点数） */
+/**
+ * 导入并提示结果（含被归入「未分类」的站点数）。
+ * 覆盖式导入前先留快照：误选文件时可在提示条上撤销，与「删除可撤销」保持同一安全等级。
+ */
 function applyImport(text) {
+  const snapshot = captureSnapshot()
   try {
     const result = importJSON(text)
     const extra = result.moved ? `；其中 ${result.moved} 个站点的分类已失效，已归入「未分类」` : ''
     notify(`导入成功：${result.categories} 个分类 / ${result.sites} 个站点${extra}`)
+    showToast('导入完成，可在 6 秒内撤销', {
+      label: '撤销导入',
+      run: () => {
+        if (restoreSnapshot(snapshot)) notify('已恢复导入前的数据')
+      },
+    })
     return true
   } catch (e) {
     notify('导入失败：' + e.message, 'err')
@@ -111,9 +141,16 @@ function onBookmarksChange(e) {
 }
 
 function doReset() {
+  const snapshot = captureSnapshot()
   resetData()
   confirmingReset.value = false
   notify('已恢复默认数据')
+  showToast('已恢复默认数据', {
+    label: '撤销',
+    run: () => {
+      if (restoreSnapshot(snapshot)) notify('已恢复重置前的数据')
+    },
+  })
 }
 </script>
 

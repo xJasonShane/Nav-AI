@@ -4,6 +4,7 @@
  */
 import { computed, nextTick, ref, watch } from 'vue'
 import { filterSites } from '../utils/search.js'
+import { isHttpUrl } from '../utils/url.js'
 
 /** @param {object[]} sites 响应式站点数组（store.sites） */
 /** @param {import('vue').ComputedRef<Map<string|null, string>>} [categoryNames] 分类 id → 名称，用于命中分类名 */
@@ -36,10 +37,10 @@ export function useSiteSearch(sites, categoryNames) {
     nextTick(() => document.getElementById(`search-opt-${id}`)?.scrollIntoView({ block: 'nearest' }))
   }
 
-  /** 在新标签页打开当前选中项 */
+  /** 在新标签页打开当前选中项（只打开合法的 http(s)，空 URL 不会开空白页） */
   function open() {
     const site = results.value[activeIndex.value]
-    if (site) window.open(site.url, '_blank', 'noopener,noreferrer')
+    if (site && isHttpUrl(site.url)) window.open(site.url, '_blank', 'noopener,noreferrer')
   }
 
   function reset() {

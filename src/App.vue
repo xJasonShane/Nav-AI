@@ -27,8 +27,9 @@ import {
   storageNotice,
   clearStorageNotice,
 } from './store/data.js'
-import { showToast } from './utils/toast.js'
+import { showToast, showUndo } from './utils/toast.js'
 import { runtimeError, clearRuntimeError } from './utils/errors.js'
+import { touchFirstSeen, shouldRemindBackup, snoozeBackupReminder } from './utils/backup.js'
 import { draggingId, resetDrag } from './utils/drag.js'
 import { flattenCategories } from './utils/grouping.js'
 import { useSiteSearch } from './composables/useSiteSearch.js'
@@ -43,6 +44,8 @@ const selected = ref(new Set())
 const bulkTarget = ref('')
 const sidebarOpen = ref(false)
 const mainRef = ref(null)
+/** 备份提醒（超过 30 天未导出时出现；关闭后 7 天内不再提示） */
+const backupNotice = ref('')
 
 /* ------- 弹窗状态 ------- */
 const siteModal = ref(null) // { site, categoryId } | null
@@ -203,21 +206,55 @@ function applyBulkMove() {
   const categoryId = target === '__none' ? null : target
   const moved = moveSitesTo(ids, categoryId)
   selected.value = new Set()
+  if (!moved) {
+    showToast('目标分类已不存在，未移动任何站点')
+    return
+  }
   const name = categoryId ? findCategory(categoryId)?.node?.name || '所选分类' : '未分类'
   showToast(`已把 ${moved} 个站点移动到「${name}」`)
+}
+
+/** 删除后把焦点落回原位置：优先下一张卡片，其次上一张，最后主区 */
+function focusCardAt(index) {
+  nextTick(() => {
+    const cards = Array.from(document.querySelectorAll('#main [data-site-id]')).filter(
+      (el) => el.offsetParent !== null
+    )
+    const target = cards[index] || cards[index - 1]
+    if (target) (target.querySelector('.card-link') || target).focus?.()
+    else mainRef.value?.focus()
+  })
+}
+
+/** 撤销后把焦点还给恢复的站点，避免操作完落回 body */
+function focusSiteById(id) {
+  nextTick(() => {
+    const target = Array.from(document.querySelectorAll('#main [data-site-id]'))
+      .filter((el) => el.offsetParent !== null)
+      .find((el) => el.dataset.siteId === id)
+    if (target) (target.querySelector('.card-link') || target).focus?.()
+    else mainRef.value?.focus()
+  })
 }
 
 /** 批量删除：整批可撤销 */
 function bulkDelete() {
   const ids = [...selected.value]
   if (!ids.length) return
+  // 先记录被删卡片在 DOM 中的起点，撤销/删除后把焦点落到原位置附近
+  const cards = Array.from(document.querySelectorAll('#main [data-site-id]'))
+  const indexes = ids
+    .map((id) => cards.findIndex((el) => el.dataset.siteId === id))
+    .filter((index) => index >= 0)
+  const firstIndex = indexes.length ? Math.min(...indexes) : 0
   const snapshots = removeSites(ids)
   selected.value = new Set()
   if (!snapshots.length) return
-  showToast(`已删除 ${snapshots.length} 个站点`, {
-    label: '撤销',
-    run: () => restoreSites(snapshots),
+  showUndo(`已删除 ${snapshots.length} 个站点`, () => {
+    restoreSites(snapshots)
+    focusSiteById(snapshots[0].site.id)
   })
+  focusCardAt(firstIndex)
 }
 
 /** 删除站点：走统一确认卡（内嵌确认，替换原生 confirm） */
@@ -230,12 +267,15 @@ function confirmDeleteSite() {
   const target = pendingSite.value
   pendingSite.value = null
   if (!target) return
+  const cards = Array.from(document.querySelectorAll('#main [data-site-id]'))
+  const index = cards.findIndex((el) => el.dataset.siteId === target.id)
   const snapshot = removeSite(target.id)
   if (!snapshot) return
-  showToast(`已删除「${target.name}」`, {
-    label: '撤销',
-    run: () => restoreSite(snapshot.site, snapshot.index),
+  showUndo(`已删除「${target.name}」`, () => {
+    restoreSite(snapshot.site, snapshot.index)
+    focusSiteById(snapshot.site.id)
   })
+  focusCardAt(index)
 }
 
 /** 任一浮层（弹窗或移动端抽屉）打开时，全局快捷键让位给浮层 */
@@ -285,18 +325,32 @@ function onKey(e) {
   }
 }
 
-onMounted(() => document.addEventListener('keydown', onKey))
+onMounted(() => {
+  document.addEventListener('keydown', onKey)
+  touchFirstSeen()
+  if (shouldRemindBackup()) {
+    backupNotice.value = '已超过 30 天未导出备份，数据仅保存在本机浏览器，建议现在打开「数据管理」导出一次。'
+  }
+})
 onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
 
 const totalSites = computed(() => store.sites.length)
 const isEmpty = computed(() => !searching.value && totalSites.value === 0)
 
-/** 顶栏提示：存储异常优先，其次是运行时异常 */
-const noticeText = computed(() => storageNotice.value || runtimeError.value)
+/** 顶栏提示：存储异常优先，其次是运行时异常，最后是备份提醒 */
+const noticeText = computed(() => storageNotice.value || runtimeError.value || backupNotice.value)
 
 function dismissNotice() {
-  if (storageNotice.value) clearStorageNotice()
-  else clearRuntimeError()
+  if (storageNotice.value) {
+    clearStorageNotice()
+    return
+  }
+  if (runtimeError.value) {
+    clearRuntimeError()
+    return
+  }
+  snoozeBackupReminder()
+  backupNotice.value = ''
 }
 </script>
 
@@ -747,7 +801,7 @@ function dismissNotice() {
 }
 
 .g-add:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-weak);
 }
 
@@ -797,7 +851,7 @@ html[data-density='compact'] .grid {
   border-radius: var(--radius-sm);
   background: var(--surface);
   box-shadow: var(--shadow-md);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   transform: translateY(calc(-100% - var(--sp-4)));
@@ -816,7 +870,7 @@ html[data-density='compact'] .grid {
   width: 52px;
   height: 52px;
   border-radius: 50%;
-  background: var(--gradient);
+  background: var(--gradient-strong);
   color: var(--on-accent);
   display: flex;
   align-items: center;

@@ -70,10 +70,19 @@ ul {
 
 /* ============ 设计令牌 ============ */
 :root {
-  /* 品牌主色：可被 html[data-accent] 覆盖，其余派生令牌（weak/ring/shadow/glow/渐变）自动跟随 */
+  /* 品牌主色：--accent 用于装饰（渐变、氛围光、描边）；--accent-solid 用于实底按钮（配白字）；
+     --accent-text 用于当前主题下的文字/图标/焦点环（浅色等于实底色，深色切到提亮混色），
+     两者分别按白底与深色底校准到 AA（4.5:1），切换主色不会牺牲可读性 */
   --accent: #4f7cff;
   --accent-2: #9b5cff;
+  --accent-solid: #3b5fe0;
+  --accent-solid-2: #6d3fd4;
+  /* 文字/图标用主色：浅色主题等于实底色；深色主题在下面切到更亮的混色 */
+  --accent-text: var(--accent-solid);
+  --accent-text-2: var(--accent-solid-2);
   --gradient: linear-gradient(135deg, var(--accent), var(--accent-2));
+  --gradient-strong: linear-gradient(135deg, var(--accent-solid), var(--accent-solid-2));
+  --gradient-text: linear-gradient(135deg, var(--accent-text), var(--accent-text-2));
   --on-accent: #ffffff;
 
   /* 布局 */
@@ -132,30 +141,41 @@ ul {
 }
 
 /* ============ 主色预设 ============ */
-/* 与 src/store/data.js 的 ACCENT_PRESETS 一一对应；只覆盖两个主色，派生令牌自动跟随 */
+/* 与 src/store/data.js 的 ACCENT_PRESETS 一一对应；accent 保持鲜亮用于装饰，
+   accent-solid / accent-solid-2 为 AA 安全的文字与实底色，派生令牌自动跟随 */
 html[data-accent='ocean'] {
   --accent: #0ea5e9;
   --accent-2: #6366f1;
+  --accent-solid: #0369a1;
+  --accent-solid-2: #4338ca;
 }
 
 html[data-accent='forest'] {
   --accent: #10b981;
   --accent-2: #0ea5e9;
+  --accent-solid: #047857;
+  --accent-solid-2: #065f46;
 }
 
 html[data-accent='sunset'] {
   --accent: #f59e0b;
   --accent-2: #ef4444;
+  --accent-solid: #b45309;
+  --accent-solid-2: #9a3412;
 }
 
 html[data-accent='grape'] {
   --accent: #8b5cf6;
   --accent-2: #ec4899;
+  --accent-solid: #6d28d9;
+  --accent-solid-2: #4c1d95;
 }
 
 html[data-accent='rose'] {
   --accent: #ec4899;
   --accent-2: #f59e0b;
+  --accent-solid: #be185d;
+  --accent-solid-2: #9d174d;
 }
 
 html[data-theme='light'] {
@@ -212,6 +232,17 @@ html[data-theme='dark'] {
   --danger-text: #ff6369;
   --ok: #4cc38a;
   --ok-text: #4cc38a;
+  /* 深色底上把文字主色提亮：实底按钮仍用 accent-solid（配白字），文字/焦点环用 accent-text。
+     先给白色兜底，支持 color-mix 的浏览器再用主色混色（避免不支持时渐变文字变透明） */
+  --accent-text: #ffffff;
+  --accent-text-2: #ffffff;
+}
+
+@supports (color: color-mix(in srgb, #000 50%, #fff)) {
+  html[data-theme='dark'] {
+    --accent-text: color-mix(in srgb, var(--accent) 55%, #ffffff);
+    --accent-text-2: color-mix(in srgb, var(--accent-2) 55%, #ffffff);
+  }
 }
 
 /* 移动端顶栏总高：10 + 36 + 10 + 1 */
@@ -223,7 +254,7 @@ html[data-theme='dark'] {
 
 /* ============ 焦点可见性 ============ */
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent-text);
   outline-offset: 2px;
 }
 
@@ -259,7 +290,7 @@ html[data-theme='dark'] {
 
 .icon-btn-sm:hover {
   background: var(--surface-hover);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .icon-btn-sm.danger:hover {
@@ -267,7 +298,7 @@ html[data-theme='dark'] {
 }
 
 .icon-btn-sm.ok:hover {
-  color: var(--ok);
+  color: var(--ok-text);
 }
 
 /* 计数徽章 */
@@ -316,7 +347,7 @@ html[data-theme='dark'] {
 }
 
 .btn-primary {
-  background: var(--gradient);
+  background: var(--gradient-strong);
   color: var(--on-accent);
   box-shadow: var(--shadow-accent);
 }
@@ -351,8 +382,8 @@ html[data-theme='dark'] {
 }
 
 .btn-dashed:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-text);
+  color: var(--accent-text);
   background: var(--accent-weak);
 }
 
@@ -395,7 +426,7 @@ html[data-theme='dark'] {
 .field-input:focus,
 .field-input:focus-visible {
   outline: none;
-  border-color: var(--accent);
+  border-color: var(--accent-text);
   box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
@@ -444,7 +475,7 @@ textarea.field-input {
 
 .seg-btn.active {
   background: var(--surface);
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: var(--fw-semibold);
   box-shadow: var(--shadow-xs);
 }

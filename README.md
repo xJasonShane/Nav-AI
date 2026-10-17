@@ -16,7 +16,7 @@
 - **智能图标**：图标可留空自动获取（默认先取站点自身 favicon，再走图标服务，全程 `no-referrer` 不回传来源），也可切换为「仅字母」完全不请求外部资源；失败自动回退为彩色字母头像
 - **明暗主题与主色**：浅色 / 深色 / 跟随系统三态切换，无刷新闪烁；6 套主色预设、卡片密度与描述开关均可调
 - **删除可撤销**：删除站点或整棵分类后 6 秒内可一键撤销
-- **数据备份与分享**：一键导出 / 导入 JSON，导入前可预览并选择覆盖或合并（按网址去重）；支持导入浏览器书签、导出浏览器书签；覆盖式导入与「恢复默认」均可 6 秒内撤销；可导出**只读分享页**（数据与样式全部内联、零外部请求、跟随系统深色，直接发给他人即可查看）
+- **数据备份与分享**：一键导出 / 导入 JSON，导入前可预览并选择覆盖或合并（按网址去重）；支持导入浏览器书签（先预览统计再确认，导入后可整批撤销）、导出浏览器书签；覆盖式导入、书签导入、「恢复默认」与批量添加均可 6 秒内撤销；数据管理面板显示上次完整备份时间、本地存储用量与持久化授权状态，超过 30 天未备份会在页面顶部提醒；可导出**只读分享页**（数据与样式全部内联、零外部请求、跟随系统深色，直接发给他人即可查看）
 - **可安装 / 离线可用（PWA）**：支持添加到主屏；Service Worker 做离线外壳（导航网络优先、静态资源缓存优先），数据本就在本地，离线打开功能完整
 - **数据自愈**：导入或历史数据中的失效分类会自动归入「未分类」并给出提示（侧边栏与「全部分类」视图末尾都会展示该分组）；存储写入失败会明确告警而不是静默丢弃
 - **多标签同步**：在多个标签页打开时自动保持一致
@@ -41,16 +41,16 @@
 
 ```
 dist/index.html                       2.11 kB │ gzip:  1.00 kB
-dist/assets/style-*.css              31.66 kB │ gzip:  6.33 kB
-dist/assets/index-*.js              117.56 kB │ gzip: 44.35 kB   # 首屏：入口 + 静态依赖
-dist/assets/SiteModal-*.js            5.54 kB │ gzip:  2.46 kB   # 以下均按需加载
-dist/assets/CategoryModal-*.js        8.03 kB │ gzip:  2.49 kB
-dist/assets/DataModal-*.js            9.07 kB │ gzip:  4.50 kB
-dist/assets/SettingsModal-*.js        4.08 kB │ gzip:  1.64 kB
-dist/assets/importers-*.js            1.30 kB │ gzip:  0.71 kB
+dist/assets/style-*.css              32.89 kB │ gzip:  6.41 kB   # check 闸门口径
+dist/assets/index-*.js              125.51 kB │ gzip: 45.96 kB   # 首屏：入口 + 静态依赖
+dist/assets/SiteModal-*.js            7.05 kB │ gzip:  3.07 kB   # 以下均按需加载
+dist/assets/CategoryModal-*.js        8.23 kB │ gzip:  2.55 kB
+dist/assets/DataModal-*.js           15.38 kB │ gzip:  6.69 kB
+dist/assets/SettingsModal-*.js        4.20 kB │ gzip:  1.73 kB
+dist/assets/importers-*.js            2.48 kB │ gzip:  1.17 kB
 ```
 
-首屏全部资源 gzip 后约 **51 KB**（HTML + CSS + JS，另有 PWA 图标 ~14 KB），无外部字体/依赖请求。四个弹窗与书签/分享页解析按需加载，不进入首屏关键路径。`npm run check` 内置体积闸门（首屏 JS ≤ 52 kB / CSS ≤ 6.5 kB，gzip）与其它 10 项工程断言。
+首屏全部资源 gzip 后约 **53 KB**（HTML + CSS + JS，另有 PWA 图标 ~14 KB），无外部字体/依赖请求。四个弹窗与书签/分享页解析按需加载，不进入首屏关键路径。`npm run check` 内置体积闸门（首屏 JS ≤ 52 kB / CSS ≤ 6.5 kB，gzip）与其它 12 项工程断言；gzip 列为闸门口径，与 Vite 自报值略有差异。
 
 ## 本地开发
 

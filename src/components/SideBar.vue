@@ -216,7 +216,7 @@ function pick(id) {
 
 .nav-item.active {
   background: var(--surface);
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: var(--fw-semibold);
   box-shadow: var(--shadow-xs);
   position: relative;
@@ -235,7 +235,7 @@ function pick(id) {
 }
 
 .nav-item.active .badge {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
 }
 

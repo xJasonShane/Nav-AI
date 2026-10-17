@@ -8,6 +8,14 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
+import {
+  lastExportedAt,
+  markExported,
+  shouldRemindBackup,
+  snoozeBackupReminder,
+  touchFirstSeen,
+} from '../src/utils/backup.js'
+
 /* ---------------- 运行环境桩件 ---------------- */
 
 const storage = new Map()
@@ -66,6 +74,7 @@ const {
   restoreSnapshot,
   flushPersist,
   storageWarning,
+  MAX_IMPORT_CHARS,
 } = data
 
 // 模拟 main.js 的首屏外观应用（模块自身只在数据变化时驱动 DOM）
@@ -180,6 +189,44 @@ test('normalizeData：非 http(s) 协议一律置空，伪协议无法进入卡�
   )
 })
 
+test('normalizeData：空 host 的 http(s) 地址同样置空，localhost 仍可用', () => {
+  const clean = normalizeData({
+    categories: [],
+    sites: [
+      { name: '空 host', url: 'https://' },
+      { name: '空 host 带查询', url: 'https://?x=1' },
+      { name: '本地开发', url: 'http://localhost:3000' },
+      { name: '正常', url: 'https://example.com/a' },
+    ],
+  })
+  assert.deepEqual(
+    clean.sites.map((s) => s.url),
+    ['', '', 'http://localhost:3000', 'https://example.com/a'],
+    '只有可解析且带 host 的地址可以落库'
+  )
+})
+
+test('分类引用：站点工厂 / 更新 / 批量移动 / 固定分类导入都拒绝失效 id', async () => {
+  await fresh()
+  addSite({ name: '幽灵分类', url: 'https://ghost.example', categoryId: 'ghost' })
+  const ghost = store.sites.find((s) => s.name === '幽灵分类')
+  assert.equal(ghost.categoryId, null, '新建时失效分类应回落为未分类')
+
+  updateSite(ghost.id, { categoryId: 'ghost-2' })
+  assert.equal(ghost.categoryId, null, '更新时失效分类应回落为未分类')
+
+  assert.equal(moveSitesTo([ghost.id], 'ghost-3'), 0, '批量移动目标失效时不应执行')
+  assert.equal(ghost.categoryId, null)
+
+  const result = importSites([{ name: '固定分类', url: 'https://fixed.example' }], 'ghost-4')
+  assert.equal(result.added, 1)
+  assert.equal(
+    store.sites.find((s) => s.name === '固定分类').categoryId,
+    null,
+    '固定分类失效时应归入未分类，而不是挂在不存在的分类上'
+  )
+})
+
 test('normalizeData：置顶/统计/标签字段做类型兜底与去重', () => {
   const clean = normalizeData({
     categories: [],
@@ -230,6 +277,11 @@ test('importJSON：拒绝高于当前版本的数据，避免静默丢字段', (
     () => importJSON(JSON.stringify({ version: DATA_VERSION + 1, categories: [], sites: [] })),
     /高于当前应用支持/
   )
+})
+
+test('importJSON：拒绝超过上限的文本，避免主线程被超大 JSON 卡死', () => {
+  assert.throws(() => importJSON('x'.repeat(MAX_IMPORT_CHARS + 1)), /导入内容过大/)
+  assert.throws(() => importJSON(null), /必须是文本/)
 })
 
 test('importJSON：归一化 + 统计返回，且导出可往返', () => {
@@ -307,6 +359,19 @@ test('站点 CRUD 与顺序调整', async () => {
   const pinnedSite = sitesOf('cat-media').find((s) => s.name === '置顶站点')
   assert.equal(pinnedSite.pinned, true)
   assert.deepEqual(pinnedSite.tags, ['置顶'])
+})
+
+test('restoreSite：原分类已删除时回落为未分类，避免撤销后站点消失', async () => {
+  await fresh()
+  const site = sitesOf('cat-media')[0]
+  const snapshot = removeSite(site.id)
+  removeCategory('cat-media')
+  restoreSite(snapshot.site, snapshot.index)
+  assert.equal(
+    store.sites.find((s) => s.id === site.id).categoryId,
+    null,
+    '分类已被删除时，撤销删除应落到未分类而不是悬空 id'
+  )
 })
 
 test('moveSiteRelative：同分类排序 + 跨分类拖拽即移动分类', async () => {
@@ -480,4 +545,31 @@ test('写入失败产生提示，恢复后自动清除', async () => {
   await nextTick()
   flushPersist()
   assert.equal(storageWarning.value, '')
+})
+
+/* ---------------- 备份健康度（O-05） ---------------- */
+
+test('备份提醒：首次使用 30 天后提醒，休眠 7 天，导出后重新计时', () => {
+  const DAY = 24 * 60 * 60 * 1000
+  const now = Date.now()
+  for (const key of ['nav-ai-last-export', 'nav-ai-first-seen', 'nav-ai-backup-snooze']) {
+    localStorage.removeItem(key)
+  }
+
+  touchFirstSeen(now - 40 * DAY)
+  assert.equal(lastExportedAt(), null)
+  assert.equal(shouldRemindBackup(now), true, '首次使用超过 30 天且从未备份应提醒')
+
+  snoozeBackupReminder(now)
+  assert.equal(shouldRemindBackup(now + 3 * DAY), false, '关闭提醒后 7 天内不再提示')
+  assert.equal(shouldRemindBackup(now + 8 * DAY), true, '休眠期结束后恢复提醒')
+
+  markExported(now)
+  assert.equal(lastExportedAt(), now)
+  assert.equal(shouldRemindBackup(now + 10 * DAY), false, '刚导出后不提醒')
+  assert.equal(shouldRemindBackup(now + 31 * DAY), true, '超过 30 天再次提醒')
+
+  for (const key of ['nav-ai-last-export', 'nav-ai-first-seen', 'nav-ai-backup-snooze']) {
+    localStorage.removeItem(key)
+  }
 })

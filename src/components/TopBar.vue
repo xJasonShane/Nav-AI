@@ -140,7 +140,7 @@ const themeLabel = { auto: '跟随系统', light: '浅色模式', dark: '深色�
   width: 30px;
   height: 30px;
   border-radius: var(--radius-sm);
-  background: var(--gradient);
+  background: var(--gradient-strong);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -152,7 +152,7 @@ const themeLabel = { auto: '跟随系统', light: '浅色模式', dark: '深色�
   font-size: var(--fs-lg);
   font-weight: var(--fw-bold);
   letter-spacing: 0.2px;
-  background: var(--gradient);
+  background: var(--gradient-text);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -183,7 +183,7 @@ const themeLabel = { auto: '跟随系统', light: '浅色模式', dark: '深色�
 }
 
 .search:focus-within {
-  border-color: var(--accent);
+  border-color: var(--accent-text);
   box-shadow: 0 0 0 3px var(--accent-ring);
 }
 

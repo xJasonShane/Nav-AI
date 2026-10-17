@@ -51,6 +51,21 @@ const CENTRAL_PATHS = [
   'M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z',
 ]
 
+/** #rrggbb → 相对亮度（WCAG 2.x） */
+function luminance(hex) {
+  const channels = hex
+    .replace('#', '')
+    .match(/../g)
+    .map((part) => parseInt(part, 16) / 255)
+    .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+}
+
+/** 与白字的对比度（主色实底按钮/FAB 的前景色固定为白） */
+function contrastOnWhite(hex) {
+  return 1.05 / (luminance(hex) + 0.05)
+}
+
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name)
@@ -172,6 +187,40 @@ check('主色预设与样式表一致（data.js ↔ style.css）', () => {
   const extra = cssKeys.filter((key) => !expected.includes(key))
   if (missing.length) bad.push(`style.css 缺少主色选择器：${missing.join(', ')}`)
   if (extra.length) bad.push(`style.css 存在未登记的主色选择器：${extra.join(', ')}`)
+  return bad
+})
+
+check('主色实底对白字对比度 ≥ 4.5:1', () => {
+  const css = read('src/style.css')
+  const blocks = [{ name: 'default', body: css.match(/:root\s*\{([\s\S]*?)\n\}/)?.[1] || '' }]
+  for (const match of css.matchAll(/html\[data-accent='([^']+)'\]\s*\{([\s\S]*?)\n\}/g)) {
+    blocks.push({ name: match[1], body: match[2] })
+  }
+
+  const bad = []
+  for (const { name, body } of blocks) {
+    for (const token of ['--accent-solid', '--accent-solid-2']) {
+      const hex = body.match(new RegExp(`${token}:\\s*(#[0-9a-fA-F]{6})`))?.[1]
+      if (!hex) {
+        bad.push(`${name} 缺少 ${token}`)
+        continue
+      }
+      const ratio = contrastOnWhite(hex)
+      if (ratio < 4.5) bad.push(`${name} ${token} ${hex} 对白字仅 ${ratio.toFixed(2)}:1（需 ≥ 4.5）`)
+    }
+  }
+  return bad
+})
+
+check('文字主色统一走 accent-text', () => {
+  const bad = []
+  for (const file of srcFiles.filter((f) => ['.vue', '.css'].includes(extname(f)))) {
+    for (const { no, text } of readLines(file)) {
+      if (/color:\s*var\(--accent\)/.test(text)) {
+        bad.push(`${rel(file)}:${no} 文字应使用 var(--accent-text)，避免浅色主色对比度不足`)
+      }
+    }
+  }
   return bad
 })
 

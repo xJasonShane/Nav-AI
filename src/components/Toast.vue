@@ -1,14 +1,29 @@
 <script setup>
 /**
  * 全局提示条（toast）：单条显示，可带一个操作按钮（如删除后的「撤销」）。
- * 位置固定在底部居中，避开 FAB 与移动端安全区。
+ * 位置固定在底部居中，避开 FAB 与移动端安全区；悬停 / 聚焦时暂停计时。
  */
-import { toast, runToastAction, hideToast } from '../utils/toast.js'
+import { toast, runToastAction, hideToast, pauseToast, resumeToast } from '../utils/toast.js'
 import Icon from './Icon.vue'
+
+/** 焦点在提示内部移动时不恢复计时，真正离开后再恢复 */
+function onFocusOut(event) {
+  const next = event.relatedTarget
+  if (!(next instanceof Node) || !event.currentTarget.contains(next)) resumeToast()
+}
 </script>
 
 <template>
-  <div v-if="toast" class="toast" role="status" aria-live="polite">
+  <div
+    v-if="toast"
+    class="toast"
+    role="status"
+    aria-live="polite"
+    @mouseenter="pauseToast"
+    @mouseleave="resumeToast"
+    @focusin="pauseToast"
+    @focusout="onFocusOut"
+  >
     <span class="toast-text">{{ toast.text }}</span>
     <button v-if="toast.action" class="btn toast-action" type="button" @click="runToastAction">
       {{ toast.action.label }}
@@ -51,13 +66,13 @@ import Icon from './Icon.vue'
   height: var(--control-h-sm);
   padding: 0 var(--sp-3);
   font-size: var(--fs-sm);
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-weak);
   flex-shrink: 0;
 }
 
 .toast-action:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 

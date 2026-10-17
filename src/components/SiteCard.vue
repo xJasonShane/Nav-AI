@@ -144,6 +144,7 @@ function onDrop(e) {
 <template>
   <article
     class="card"
+    :data-site-id="site.id"
     :class="{
       'is-active': active,
       'is-selected': bulk && selected,
@@ -153,7 +154,7 @@ function onDrop(e) {
     }"
     :role="bulk ? 'checkbox' : undefined"
     :aria-checked="bulk ? String(selected) : undefined"
-    :tabindex="bulk ? 0 : undefined"
+    :tabindex="bulk ? 0 : -1"
     :draggable="order ? 'true' : 'false'"
     @click="bulk && $emit('toggle-select')"
     @keydown.space.prevent="bulk && $emit('toggle-select')"
@@ -265,7 +266,7 @@ function onDrop(e) {
   z-index: 2;
   width: 16px;
   height: 16px;
-  accent-color: var(--accent);
+  accent-color: var(--accent-text);
   pointer-events: none;
 }
 
@@ -274,7 +275,7 @@ function onDrop(e) {
 }
 
 .card.is-selected {
-  border-color: var(--accent);
+  border-color: var(--accent-text);
   background: var(--accent-weak);
 }
 
@@ -298,18 +299,18 @@ html[data-density='compact'] .icon {
 
 .card:hover .name,
 .card:focus-within .name {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* 命令面板式搜索的当前项 */
 .card.is-active {
-  border-color: var(--accent);
+  border-color: var(--accent-text);
   box-shadow: var(--shadow-md);
   transform: translateY(-2px);
 }
 
 .card.is-active .name {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* 拖拽中的卡片与落点指示 */
@@ -318,7 +319,7 @@ html[data-density='compact'] .icon {
 }
 
 .card.drop-target {
-  border-color: var(--accent);
+  border-color: var(--accent-text);
 }
 
 .card.drop-target::before {
@@ -329,7 +330,7 @@ html[data-density='compact'] .icon {
   left: -3px;
   width: 3px;
   border-radius: var(--radius-pill);
-  background: var(--accent);
+  background: var(--accent-text);
 }
 
 .card.drop-target.drop-after::before {
@@ -433,7 +434,7 @@ html[data-density='compact'] .icon {
 
 /* 已置顶标记：跟随卡片主色，位于名称最前（长名称截断时仍可见） */
 .pin-mark {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .ops {
@@ -462,7 +463,7 @@ html[data-density='compact'] .icon {
 
 .op:hover {
   background: var(--surface-hover);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .op:disabled {

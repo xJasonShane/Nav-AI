@@ -37,7 +37,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
           worker.postMessage('skip-waiting')
           navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true })
         },
-      })
+      }, undefined, 'low')
     }
 
     registration.addEventListener('updatefound', () => {

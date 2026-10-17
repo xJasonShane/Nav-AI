@@ -61,7 +61,7 @@ defineProps({
   font-size: var(--fs-2xl);
   font-weight: var(--fw-bold);
   line-height: var(--lh-tight);
-  background: var(--gradient);
+  background: var(--gradient-text);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;

@@ -180,7 +180,7 @@ function normalizeTitle() {
 }
 
 .swatch.active {
-  border-color: var(--accent);
+  border-color: var(--accent-text);
   box-shadow: 0 0 0 2px var(--accent-ring);
 }
 </style>

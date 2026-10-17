@@ -2,11 +2,20 @@
 import { reactive, computed, ref } from 'vue'
 import Modal from './Modal.vue'
 import Icon from './Icon.vue'
-import { addSite, updateSite, store, findCategory, importSites } from '../store/data.js'
+import {
+  addSite,
+  updateSite,
+  store,
+  findCategory,
+  importSites,
+  captureSnapshot,
+  restoreSnapshot,
+  MAX_IMPORT_CHARS,
+} from '../store/data.js'
 import { parseSiteLines } from '../utils/importers.js'
 import { isValidHttpUrl } from '../utils/url.js'
 import { flattenCategories } from '../utils/grouping.js'
-import { showToast } from '../utils/toast.js'
+import { showToast, showUndo } from '../utils/toast.js'
 
 const props = defineProps({
   /** 编辑时传入站点对象，新建时传 null */
@@ -77,18 +86,30 @@ function submit() {
   emit('close')
 }
 
-/** 批量添加：解析文本 → 去重导入 → 关闭（结果由全局提示反馈） */
+/** 批量添加：解析文本 → 去重导入 → 关闭（结果由全局提示反馈，可整批撤销） */
 function submitBulk() {
+  if (bulkText.value.length > MAX_IMPORT_CHARS) {
+    bulkError.value = '内容过大，请拆分后再添加'
+    return
+  }
   const entries = parseSiteLines(bulkText.value)
   if (!entries.length) {
     bulkError.value = '没有识别到有效网址，请检查每行格式'
     return
   }
+  const snapshot = captureSnapshot()
   const result = importSites(entries, form.categoryId || null)
   emit('close')
   const parts = [`已添加 ${result.added} 个站点`]
   if (result.skipped) parts.push(`跳过 ${result.skipped} 个重复项`)
-  showToast(parts.join('，'))
+  if (!result.added) {
+    showToast(parts.join('，'))
+    return
+  }
+  showUndo(parts.join('，'), () => {
+    restoreSnapshot(snapshot)
+    document.getElementById('main')?.focus?.()
+  }, '撤销添加')
 }
 </script>
 

@@ -242,12 +242,35 @@ const PERSIST_DELAY = 200
 let lastPersisted = ''
 let persistTimer = 0
 let pendingJSON = ''
+let persistRequested = false
+
+/**
+ * 首次成功写入后请求「持久化存储」（best-effort）：
+ * 浏览器可在空间紧张时驱逐普通存储，授权后更不容易被清理。失败静默，不影响主流程；
+ * 注意这不能替代导出备份（Safari 仍可能按未使用天数清理脚本可写存储）。
+ */
+function requestPersistence() {
+  if (persistRequested) return
+  persistRequested = true
+  try {
+    if (
+      typeof navigator !== 'undefined' &&
+      navigator.storage &&
+      typeof navigator.storage.persist === 'function'
+    ) {
+      navigator.storage.persist().catch(() => {})
+    }
+  } catch (e) {
+    /* 旧浏览器 / 隐私模式：忽略 */
+  }
+}
 
 function persist(json) {
   try {
     localStorage.setItem(STORAGE_KEY, json)
     lastPersisted = json
     if (storageWarning.value) storageWarning.value = '' // 写入恢复正常后清除提示
+    requestPersistence()
   } catch (e) {
     storageWarning.value = '数据保存失败：浏览器存储空间不足或已被禁用，最近的修改可能无法保留，请尽快导出备份。'
   }
@@ -363,12 +386,13 @@ export const sitesByCategory = computed(() => {
   return map
 })
 
-/** 添加分类（parentId 为 null 时为顶级分类；最多两级） */
+/** 添加分类（parentId 为 null 时为顶级分类；最多两级）；父分类不存在时返回 null，避免产生孤儿节点 */
 export function addCategory(name, icon = '', parentId = null) {
   const node = { id: uid(), name, icon, children: [] }
   if (parentId) {
     const hit = findCategory(parentId)
-    if (hit) hit.node.children.push(node)
+    if (!hit) return null
+    hit.node.children.push(node)
   } else {
     store.categories.push(node)
   }
@@ -428,7 +452,11 @@ export function moveCategory(id, dir) {
 
 /* ---------------- 站点操作 ---------------- */
 
-/** 新站点统一工厂：保证 v4 新增字段都有默认值，同时保留调用方显式传入的置顶/标签 */
+/**
+ * 新站点统一工厂：保证 v4 新增字段都有默认值，同时保留调用方显式传入的置顶/标签。
+ * 分类 id 必须能在当前分类树中命中，否则归入「未分类」——避免站点挂到已删除的分类后
+ * 从所有分组消失（normalizeData 只会在下次加载时修复）。
+ */
 function newSite({
   name,
   url,
@@ -446,7 +474,7 @@ function newSite({
     url,
     desc,
     icon,
-    categoryId: categoryId || null,
+    categoryId: categoryId && findCategory(categoryId) ? categoryId : null,
     pinned: pinned === true,
     visits,
     lastVisited,
@@ -460,7 +488,13 @@ export function addSite(payload) {
 
 export function updateSite(id, patch) {
   const site = store.sites.find((s) => s.id === id)
-  if (site) Object.assign(site, patch)
+  if (!site || !patch || typeof patch !== 'object') return
+  const next = { ...patch }
+  // 编辑表单可能持有已被删除的分类 id：写入前统一回落为「未分类」
+  if ('categoryId' in next) {
+    next.categoryId = next.categoryId && findCategory(next.categoryId) ? next.categoryId : null
+  }
+  Object.assign(site, next)
 }
 
 /** 删除站点：返回 { site, index } 快照，供「撤销」还原到原位置 */
@@ -471,15 +505,17 @@ export function removeSite(id) {
   return { site, index }
 }
 
-/** 撤销删除站点：放回原位置（越界时落到末尾） */
+/** 撤销删除站点：放回原位置（越界时落到末尾）；原分类已删除则回落为未分类 */
 export function restoreSite(site, index) {
   if (!site) return
+  if (site.categoryId && !findCategory(site.categoryId)) site.categoryId = null
   const at = Math.min(Math.max(index ?? store.sites.length, 0), store.sites.length)
   store.sites.splice(at, 0, site)
 }
 
-/** 批量移动站点到指定分类（categoryId 为 null 表示「未分类」） */
+/** 批量移动站点到指定分类（categoryId 为 null 表示「未分类」）；目标分类失效时不执行 */
 export function moveSitesTo(ids, categoryId) {
+  if (categoryId && !findCategory(categoryId)) return 0
   const set = new Set(ids)
   let moved = 0
   for (const site of store.sites) {
@@ -502,10 +538,11 @@ export function removeSites(ids) {
   return snapshots
 }
 
-/** 撤销批量删除：按原索引升序放回 */
+/** 撤销批量删除：按原索引升序放回；原分类已删除则回落为未分类 */
 export function restoreSites(snapshots) {
   const sorted = [...(snapshots || [])].sort((a, b) => a.index - b.index)
   for (const { site, index } of sorted) {
+    if (site.categoryId && !findCategory(site.categoryId)) site.categoryId = null
     const at = Math.min(Math.max(index, 0), store.sites.length)
     store.sites.splice(at, 0, site)
   }
@@ -541,7 +578,8 @@ export function moveSiteRelative(draggedId, targetId, after = false) {
     list.splice(from, 0, node)
     return false
   }
-  node.categoryId = list[targetIndex].categoryId || null
+  const targetCategory = list[targetIndex].categoryId
+  node.categoryId = targetCategory && findCategory(targetCategory) ? targetCategory : null
   list.splice(after ? targetIndex + 1 : targetIndex, 0, node)
   return true
 }
@@ -553,6 +591,9 @@ export function sitesOf(categoryId) {
 
 /* ---------------- 数据导入 / 导出 ---------------- */
 
+/** 单次导入文本上限：防止超大 JSON 在主线程解析时卡死（2 MB 足够容纳数万站点） */
+export const MAX_IMPORT_CHARS = 2 * 1024 * 1024
+
 export function exportJSON() {
   return JSON.stringify({ ...JSON.parse(JSON.stringify(store)), version: DATA_VERSION }, null, 2)
 }
@@ -562,6 +603,10 @@ export function exportJSON() {
  * @returns {{ categories: number, sites: number, moved: number }} 导入结果，供界面提示
  */
 export function importJSON(text) {
+  if (typeof text !== 'string') throw new Error('导入内容必须是文本')
+  if (text.length > MAX_IMPORT_CHARS) {
+    throw new Error(`导入内容过大（超过 ${Math.round(MAX_IMPORT_CHARS / 1024 / 1024)} MB），请拆分后再导入`)
+  }
   const parsed = JSON.parse(text)
   if (!parsed || !Array.isArray(parsed.categories) || !Array.isArray(parsed.sites)) {
     throw new Error('数据格式不正确：缺少 categories 或 sites 字段')
@@ -638,7 +683,8 @@ export function importSites(entries, fixedCategoryId) {
     seen.add(key)
     let categoryId = null
     if (fixed) {
-      categoryId = fixedCategoryId || null
+      // 固定分类可能已被删除（弹窗打开期间另一个标签页删了分类）：回落到「未分类」
+      categoryId = fixedCategoryId && findCategory(fixedCategoryId) ? fixedCategoryId : null
     } else {
       const res = ensureCategoryPath(entry.categoryPath)
       categoryId = res.id

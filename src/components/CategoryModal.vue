@@ -12,7 +12,7 @@ import {
   restoreCategory,
   moveCategory,
 } from '../store/data.js'
-import { showToast } from '../utils/toast.js'
+import { showUndo } from '../utils/toast.js'
 
 const emit = defineEmits(['close'])
 
@@ -90,6 +90,15 @@ function askDelete(node) {
   pendingDelete.value = node
 }
 
+/** 删除/撤销后把焦点留在分类列表内，避免落回 body（跳过禁用态按钮） */
+function focusCats() {
+  nextTick(() => {
+    const buttons = Array.from(document.querySelectorAll('.cats .cat-row .icon-btn-sm'))
+    const target = buttons.find((el) => !el.disabled) || document.querySelector('.cats .add-btn')
+    target?.focus?.()
+  })
+}
+
 /** 确认删除后提供 6 秒撤销窗口（分类与其下站点关系一并还原） */
 function confirmDelete() {
   const node = pendingDelete.value
@@ -97,10 +106,11 @@ function confirmDelete() {
   if (!node) return
   const snapshot = removeCategory(node.id)
   if (!snapshot) return
-  showToast(`已删除分类「${node.name}」`, {
-    label: '撤销',
-    run: () => restoreCategory(snapshot),
+  showUndo(`已删除分类「${node.name}」`, () => {
+    restoreCategory(snapshot)
+    focusCats()
   })
+  focusCats()
 }
 
 function move(node, dir) {

@@ -57,6 +57,8 @@ const {
   removeSite,
   restoreSite,
   moveSitesTo,
+  updateSites,
+  addTagToSites,
   removeSites,
   restoreSites,
   moveSite,
@@ -72,6 +74,8 @@ const {
   applyExternalData,
   captureSnapshot,
   restoreSnapshot,
+  readLocalSnapshot,
+  restoreLocalSnapshot,
   flushPersist,
   storageWarning,
   MAX_IMPORT_CHARS,
@@ -270,6 +274,27 @@ test('captureSnapshot / restoreSnapshot：覆盖式导入可完整回滚', async
   assert.equal(store.categories.length, catCount)
   assert.ok(store.sites.some((s) => s.name === 'GitHub'), '站点内容应完整还原')
   assert.equal(restoreSnapshot(null), false, '空快照应安全返回 false')
+})
+
+test('本地滚动快照：覆盖导入前自动保留上一份，刷新后仍可恢复', async () => {
+  await fresh()
+  const before = store.sites.length
+  const snapshot = readLocalSnapshot()
+  assert.ok(snapshot, '覆盖导入前应写入自动备份')
+  assert.ok(snapshot.at > 0, '自动备份应带时间戳')
+  assert.equal(snapshot.data.sites.length, before, '快照内容应是导入前的数据')
+
+  importJSON(
+    JSON.stringify({
+      categories: [{ id: 'only', name: '唯一分类' }],
+      sites: [{ name: '唯一站点', url: 'https://only.example', categoryId: 'only' }],
+    })
+  )
+  assert.equal(store.sites.length, 1)
+  assert.equal(readLocalSnapshot().data.sites.length, before, '导入后自动备份仍指向导入前数据')
+
+  assert.equal(restoreLocalSnapshot(), true)
+  assert.equal(store.sites.length, before, '恢复自动备份应回到导入前')
 })
 
 test('importJSON：拒绝高于当前版本的数据，避免静默丢字段', () => {
@@ -512,6 +537,25 @@ test('密度与标题：设置变化后同步到 DOM 与文档标题', async () 
 })
 
 /* ---------------- 批量管理（F6） ---------------- */
+
+test('updateSites / addTagToSites：批量置顶与加标签，标签去重且上限 8', async () => {
+  await fresh()
+  const ids = sitesOf('cat-media').map((s) => s.id)
+  assert.equal(updateSites(ids, { pinned: true }), 2)
+  assert.ok(sitesOf('cat-media').every((s) => s.pinned === true))
+
+  assert.equal(updateSites(ids, { categoryId: 'ghost' }), 2)
+  assert.ok(sitesOf(null).some((s) => ids.includes(s.id)), '失效分类应回落为未分类')
+
+  const target = store.sites.find((s) => s.id === ids[0])
+  target.tags = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+  assert.equal(addTagToSites([ids[0]], 'h'), 1, '未满 8 个时应追加')
+  assert.equal(target.tags.at(-1), 'h')
+  assert.equal(addTagToSites([ids[0]], 'h'), 0, '已有标签不重复添加')
+  assert.equal(addTagToSites([ids[0]], 'i'), 0, '已满 8 个时拒绝追加')
+  assert.equal(target.tags.length, 8)
+  assert.equal(target.tags.at(-1), 'h')
+})
 
 test('批量移动 / 批量删除 / 整批撤销', async () => {
   await fresh()

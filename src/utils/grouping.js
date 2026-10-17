@@ -10,32 +10,41 @@
  * @param {(id: string) => object|null} [opts.findNode] 按 id 取分类节点
  * @param {object[]} [opts.allSites] 全量站点（recent / frequent 虚拟视图使用）
  * @param {boolean} [opts.pinnedFirst] 分组内是否把置顶站点排到最前（排序模式应传 false）
+ * @param {string} [opts.tag] 标签过滤：只保留含该标签的站点；空串表示不过滤
  */
-export function buildGroups({ categories, sitesOf, selectedId, findNode, allSites, pinnedFirst = false }) {
-  /** 稳定分区：置顶在前，其余保持原有相对顺序；不修改 store 数组 */
+export function buildGroups({ categories, sitesOf, selectedId, findNode, allSites, pinnedFirst = false, tag = '' }) {
+  const tagName = String(tag || '').trim()
+  const matchTag = (site) => !tagName || (Array.isArray(site.tags) && site.tags.includes(tagName))
+
+  /** 稳定分区：先按标签过滤，再置顶在前，其余保持原有相对顺序；不修改 store 数组 */
   const order = (list) => {
-    if (!pinnedFirst) return list
+    const filtered = tagName ? list.filter(matchTag) : list
+    if (!pinnedFirst) return filtered
     const pinned = []
     const rest = []
-    for (const site of list) (site.pinned ? pinned : rest).push(site)
+    for (const site of filtered) (site.pinned ? pinned : rest).push(site)
     return [...pinned, ...rest]
   }
 
   if (selectedId === 'uncategorized') {
-    return [{ key: 'uncat', title: '未分类', icon: '📥', sites: order(sitesOf(null)), children: [] }]
+    const sites = order(sitesOf(null))
+    if (tagName && !sites.length) return []
+    return [{ key: 'uncat', title: '未分类', icon: '📥', sites, children: [] }]
   }
 
   if (selectedId === 'recent') {
     const list = (allSites || [])
-      .filter((site) => site.lastVisited > 0)
+      .filter((site) => site.lastVisited > 0 && matchTag(site))
       .sort((a, b) => b.lastVisited - a.lastVisited)
+    if (tagName && !list.length) return []
     return [{ key: 'recent', title: '最近打开', icon: '🕘', sites: list.slice(0, 60), children: [] }]
   }
 
   if (selectedId === 'frequent') {
     const list = (allSites || [])
-      .filter((site) => site.visits > 0)
+      .filter((site) => site.visits > 0 && matchTag(site))
       .sort((a, b) => b.visits - a.visits || b.lastVisited - a.lastVisited)
+    if (tagName && !list.length) return []
     return [{ key: 'frequent', title: '最常访问', icon: '🔥', sites: list.slice(0, 60), children: [] }]
   }
 
@@ -54,7 +63,11 @@ export function buildGroups({ categories, sitesOf, selectedId, findNode, allSite
 
   if (selectedId) {
     const node = (findNode && findNode(selectedId)) || (categories || []).find((c) => c.id === selectedId)
-    return node ? [toGroup(node)] : []
+    if (!node) return []
+    const group = toGroup(node)
+    if (tagName) group.children = group.children.filter((child) => child.sites.length)
+    if (tagName && !group.sites.length && !group.children.length) return []
+    return [group]
   }
 
   const groups = (categories || []).map(toGroup)
@@ -64,7 +77,12 @@ export function buildGroups({ categories, sitesOf, selectedId, findNode, allSite
   if (uncategorized.length) {
     groups.push({ key: 'uncat', title: '未分类', icon: '📥', sites: uncategorized, children: [] })
   }
+  if (!tagName) return groups
+
+  // 标签过滤下只保留有命中的分组，避免整屏空分组标题
   return groups
+    .map((group) => ({ ...group, children: group.children.filter((child) => child.sites.length) }))
+    .filter((group) => group.sites.length || group.children.length)
 }
 
 /**

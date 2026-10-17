@@ -13,6 +13,8 @@ import { safeHttpUrl, urlKey } from '../utils/url.js'
 const STORAGE_KEY = 'nav-ai-data-v1'
 /** 数据损坏时的旁路备份键：避免被默认数据的首次写回覆盖，保留可人工恢复的现场 */
 const BACKUP_KEY = `${STORAGE_KEY}.bak`
+/** 覆盖式操作前的单槽滚动快照：6 秒撤销只在内存，刷新后仍可从这里恢复 */
+const SNAPSHOT_KEY = `${STORAGE_KEY}.prev`
 
 /** 当前数据版本：新增字段时 +1，并在 MIGRATIONS 中补一条升级函数 */
 export const DATA_VERSION = 4
@@ -486,15 +488,49 @@ export function addSite(payload) {
   store.sites.push(newSite(payload))
 }
 
-export function updateSite(id, patch) {
-  const site = store.sites.find((s) => s.id === id)
-  if (!site || !patch || typeof patch !== 'object') return
+/** 站点补丁的统一校验：分类 id 失效时回落为未分类 */
+function normalizeSitePatch(patch) {
   const next = { ...patch }
-  // 编辑表单可能持有已被删除的分类 id：写入前统一回落为「未分类」
   if ('categoryId' in next) {
     next.categoryId = next.categoryId && findCategory(next.categoryId) ? next.categoryId : null
   }
-  Object.assign(site, next)
+  return next
+}
+
+export function updateSite(id, patch) {
+  const site = store.sites.find((s) => s.id === id)
+  if (!site || !patch || typeof patch !== 'object') return
+  Object.assign(site, normalizeSitePatch(patch))
+}
+
+/** 批量更新站点（置顶等元数据）；返回实际更新的站点数 */
+export function updateSites(ids, patch) {
+  if (!patch || typeof patch !== 'object') return 0
+  const set = new Set(ids)
+  const next = normalizeSitePatch(patch)
+  let changed = 0
+  for (const site of store.sites) {
+    if (!set.has(site.id)) continue
+    Object.assign(site, next)
+    changed += 1
+  }
+  return changed
+}
+
+/** 批量加标签：去重、上限 8；返回实际新增标签的站点数 */
+export function addTagToSites(ids, tag) {
+  const name = String(tag || '').trim()
+  if (!name) return 0
+  const set = new Set(ids)
+  let changed = 0
+  for (const site of store.sites) {
+    if (!set.has(site.id)) continue
+    const tags = Array.isArray(site.tags) ? site.tags : []
+    if (tags.includes(name) || tags.length >= 8) continue
+    site.tags = [...tags, name]
+    changed += 1
+  }
+  return changed
 }
 
 /** 删除站点：返回 { site, index } 快照，供「撤销」还原到原位置 */
@@ -617,6 +653,7 @@ export function importJSON(text) {
     throw new Error(`数据版本 v${declared} 高于当前应用支持的 v${DATA_VERSION}，请升级应用后再导入`)
   }
   const { settings, categories, sites, moved } = normalizeData(migrate(parsed))
+  saveLocalSnapshot()
   Object.assign(store, { version: DATA_VERSION, settings, categories, sites })
   return { categories: categories.length, sites: sites.length, moved }
 }
@@ -638,6 +675,44 @@ export function restoreSnapshot(snapshot) {
   const { settings, categories, sites } = normalizeData(migrate(snapshot))
   Object.assign(store, { version: DATA_VERSION, settings, categories, sites })
   return true
+}
+
+/**
+ * 覆盖式操作前的单槽本地快照（best-effort）：
+ * 6 秒撤销只存在内存，刷新/关闭后失效；这里把操作前数据另存一份，供数据管理面板手动恢复。
+ * 写入失败（配额不足 / 隐私模式）静默忽略，不阻塞主操作。
+ */
+export function saveLocalSnapshot() {
+  try {
+    localStorage.setItem(SNAPSHOT_KEY, JSON.stringify({ at: Date.now(), data: store }))
+    return true
+  } catch (e) {
+    return false
+  }
+}
+
+/** 读取本地滚动快照：不存在或结构非法时返回 null */
+export function readLocalSnapshot() {
+  try {
+    const raw = localStorage.getItem(SNAPSHOT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || !parsed.data) return null
+    if (!Array.isArray(parsed.data.categories) || !Array.isArray(parsed.data.sites)) return null
+    return {
+      at: Number.isFinite(parsed.at) ? parsed.at : 0,
+      data: parsed.data,
+    }
+  } catch (e) {
+    return null
+  }
+}
+
+/** 用本地滚动快照覆盖当前数据（内部走 migrate + normalizeData） */
+export function restoreLocalSnapshot() {
+  const snapshot = readLocalSnapshot()
+  if (!snapshot) return false
+  return restoreSnapshot(snapshot.data)
 }
 
 /* ---------------- 批量导入（粘贴多行 / 浏览器书签） ---------------- */
@@ -703,6 +778,7 @@ export function importSites(entries, fixedCategoryId) {
 }
 
 export function resetData() {
+  saveLocalSnapshot()
   Object.assign(store, freshData())
 }
 

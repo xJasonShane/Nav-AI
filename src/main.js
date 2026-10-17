@@ -12,6 +12,24 @@ const app = createApp(App)
 app.config.errorHandler = (error) => reportError(error, '渲染')
 app.mount('#app')
 
+/**
+ * 空闲时预热按需弹窗 chunk：
+ * SW 会通过 sw-assets.json 在 install 阶段缓存这些资源；普通浏览器也可以提前取到，
+ * 避免第一次点「添加 / 设置 / 数据管理」时出现短暂空白。
+ */
+function warmAsyncChunks() {
+  Promise.all([
+    import('./components/SiteModal.vue'),
+    import('./components/CategoryModal.vue'),
+    import('./components/DataModal.vue'),
+    import('./components/SettingsModal.vue'),
+  ]).catch(() => {})
+}
+if (import.meta.env.PROD) {
+  if ('requestIdleCallback' in window) window.requestIdleCallback(warmAsyncChunks, { timeout: 3000 })
+  else setTimeout(warmAsyncChunks, 1500)
+}
+
 // 脚本错误与未处理的 Promise 拒绝：同样收口到提示条
 window.addEventListener('error', (event) => reportError(event.error || event.message, '脚本'))
 window.addEventListener('unhandledrejection', (event) => reportError(event.reason, '异步'))

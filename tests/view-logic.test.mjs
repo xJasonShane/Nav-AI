@@ -8,8 +8,8 @@ import { test } from 'node:test'
 import { filterSites } from '../src/utils/search.js'
 import { buildGroups, flattenCategories } from '../src/utils/grouping.js'
 import { buildSharePage, escapeHtml } from '../src/utils/export-page.js'
-import { isValidHttpUrl } from '../src/utils/url.js'
-import { backupToEntries, previewMerge } from '../src/utils/importers.js'
+import { isHttpUrl, isValidHttpUrl, safeHttpUrl, urlKey } from '../src/utils/url.js'
+import { backupToEntries, parseSiteLines, previewMerge } from '../src/utils/importers.js'
 import { buildBookmarksHTML } from '../src/utils/export-bookmarks.js'
 
 const SITES = [
@@ -240,4 +240,56 @@ test('buildBookmarksHTML：两层文件夹、转义与伪协议过滤', () => {
   assert.ok(html.includes('&lt;script&gt;'), '站点名称应转义')
   assert.ok(html.includes('未分类'), '未分类站点单独成夹')
   assert.ok(!html.includes('空分类'), '空分类不导出')
+})
+
+
+test('safeHttpUrl / urlKey：空 host 拒绝，去重键忽略协议与 www', () => {
+  assert.equal(safeHttpUrl('https://'), '')
+  assert.equal(safeHttpUrl('https://?x=1'), '')
+  assert.equal(safeHttpUrl('javascript:alert(1)'), '')
+  assert.equal(safeHttpUrl('http://localhost:3000'), 'http://localhost:3000')
+  assert.equal(isHttpUrl('https://'), false)
+  assert.equal(urlKey('http://example.com'), urlKey('https://www.example.com/'))
+})
+
+test('parseSiteLines：三种写法、注释与无效行', () => {
+  const entries = parseSiteLines(`
+https://github.com
+GitHub https://github.com
+掘金|https://juejin.cn
+# 这是注释
+不是网址
+a.com
+`)
+  assert.deepEqual(entries, [
+    { name: '', url: 'https://github.com' },
+    { name: 'GitHub', url: 'https://github.com' },
+    { name: '掘金', url: 'https://juejin.cn' },
+    { name: '', url: 'https://a.com' },
+  ])
+})
+
+test('buildGroups：标签过滤只保留命中站点与有命中的分组', () => {
+  const list = [
+    { id: 'a', name: 'A', categoryId: 'c1', tags: ['AI', '工具'], lastVisited: 10, visits: 1 },
+    { id: 'b', name: 'B', categoryId: 'c1', tags: ['工具'] },
+    { id: 'c', name: 'C', categoryId: 'c2', tags: ['AI'], lastVisited: 20, visits: 2 },
+    { id: 'd', name: 'D', categoryId: null, tags: [] },
+  ]
+  const cats = [
+    { id: 'c1', name: 'C1', children: [{ id: 'c1a', name: 'C1A', children: [] }] },
+    { id: 'c2', name: 'C2', children: [] },
+  ]
+  const of = (id) => list.filter((site) => (site.categoryId || null) === (id || null))
+
+  const groups = buildGroups({ categories: cats, sitesOf: of, selectedId: null, tag: 'AI' })
+  assert.deepEqual(groups.map((g) => g.key), ['c1', 'c2'], '没有命中的未分类/子分类应被移除')
+  assert.deepEqual(groups[0].sites.map((s) => s.id), ['a'])
+  assert.deepEqual(groups[0].children, [], '空子分类不应留下')
+  assert.deepEqual(groups[1].sites.map((s) => s.id), ['c'])
+
+  assert.deepEqual(buildGroups({ categories: cats, sitesOf: of, selectedId: 'c1', tag: '工具' })[0].sites.map((s) => s.id), ['a', 'b'])
+  assert.deepEqual(buildGroups({ categories: cats, sitesOf: of, selectedId: 'c1a', tag: 'AI' }), [], '子分类无命中时返回空')
+  assert.deepEqual(buildGroups({ categories: cats, sitesOf: of, selectedId: 'recent', allSites: list, tag: 'AI' })[0].sites.map((s) => s.id), ['c', 'a'])
+  assert.deepEqual(buildGroups({ categories: cats, sitesOf: of, selectedId: 'frequent', allSites: list, tag: '工具' })[0].sites.map((s) => s.id), ['a'])
 })

@@ -10,6 +10,8 @@ import {
   importSites,
   captureSnapshot,
   restoreSnapshot,
+  readLocalSnapshot,
+  restoreLocalSnapshot,
   normalizeData,
   migrate,
   DATA_VERSION,
@@ -37,6 +39,9 @@ const messageType = ref('ok')
 const fileInput = ref(null)
 const bookmarksInput = ref(null)
 const confirmingReset = ref(false)
+/** 覆盖式操作前自动保存的本地快照 */
+const localSnapshot = ref(null)
+const confirmingRestore = ref(false)
 /** 备份健康度与存储用量（仅展示，不进入数据 schema） */
 const storageInfo = ref({ last: null, usage: 0, quota: 0, persisted: null })
 
@@ -66,6 +71,7 @@ onBeforeUnmount(() => clearTimeout(messageTimer))
 /** 读取备份时间与存储用量：浏览器不支持 Storage API 时保持占位，不影响导入导出 */
 onMounted(async () => {
   storageInfo.value.last = lastExportedAt()
+  localSnapshot.value = readLocalSnapshot()
   try {
     if (navigator.storage?.estimate) {
       const estimate = await navigator.storage.estimate()
@@ -96,6 +102,31 @@ function formatDate(timestamp) {
 /** 撤销 / 导入后把焦点留在对话框内，避免按钮消失后落回 body */
 function focusDialog() {
   nextTick(() => document.querySelector('.modal-box')?.focus?.())
+}
+
+function refreshLocalSnapshot() {
+  localSnapshot.value = readLocalSnapshot()
+}
+
+/** 恢复自动备份：先把当前数据放进内存快照，恢复后仍可 6 秒撤销 */
+function restoreAutoSnapshot() {
+  const at = localSnapshot.value?.at
+  const current = captureSnapshot()
+  if (!restoreLocalSnapshot()) {
+    confirmingRestore.value = false
+    notify('自动备份不可用或结构已损坏', 'err')
+    return
+  }
+  confirmingRestore.value = false
+  refreshLocalSnapshot()
+  notify(`已恢复 ${formatDate(at)} 的自动备份`)
+  focusDialog()
+  showUndo('已恢复自动备份', () => {
+    if (restoreSnapshot(current)) {
+      notify('已回到恢复前的数据')
+      focusDialog()
+    }
+  }, '撤销恢复')
 }
 
 /** 统一下载：延迟释放 Blob URL，避免 Safari / 部分 WebView 在 click() 后立即 revoke 导致下载被取消 */
@@ -216,6 +247,7 @@ function confirmImport() {
       notify(`导入成功：${result.categories} 个分类 / ${result.sites} 个站点${extra}`)
     }
     importText.value = ''
+    refreshLocalSnapshot()
     focusDialog()
     showUndo('导入完成，可在 6 秒内撤销', () => {
       if (restoreSnapshot(snapshot)) {
@@ -304,6 +336,7 @@ function doReset() {
   const snapshot = captureSnapshot()
   resetData()
   confirmingReset.value = false
+  refreshLocalSnapshot()
   notify('已恢复默认数据')
   focusDialog()
   showUndo('已恢复默认数据', () => {
@@ -385,9 +418,29 @@ function doReset() {
     </section>
 
     <section class="sec">
+      <h4>自动备份</h4>
+      <p class="hint">覆盖导入或恢复默认前，会自动保留上一份数据（单槽，仅最近一次）。</p>
+      <p v-if="localSnapshot" class="hint">最近一次：{{ formatDate(localSnapshot.at) }}</p>
+      <p v-else class="hint">暂无自动备份。</p>
+      <button v-if="localSnapshot && !confirmingRestore" class="btn btn-ghost" type="button" @click="confirmingRestore = true; confirmingReset = false">
+        恢复这份自动备份
+      </button>
+      <ConfirmCard
+        v-if="confirmingRestore"
+        class="reset-confirm"
+        confirm-text="确认恢复"
+        danger
+        @confirm="restoreAutoSnapshot"
+        @cancel="confirmingRestore = false"
+      >
+        确定用 {{ formatDate(localSnapshot && localSnapshot.at) }} 的自动备份替换当前全部数据？恢复前的数据仍可在 6 秒内撤销。
+      </ConfirmCard>
+    </section>
+
+    <section class="sec">
       <h4>恢复默认</h4>
       <p class="hint">清除当前数据，恢复为内置的演示数据。</p>
-      <button v-if="!confirmingReset" class="btn btn-danger" type="button" @click="confirmingReset = true">恢复默认演示数据</button>
+      <button v-if="!confirmingReset" class="btn btn-danger" type="button" @click="confirmingReset = true; confirmingRestore = false">恢复默认演示数据</button>
       <ConfirmCard
         v-else
         class="reset-confirm"
@@ -492,10 +545,5 @@ textarea.field-input {
   padding: var(--sp-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--bg-soft);
-}
-
-.preview .ops {
-  margin-top: var(--sp-2);
 }
 </style>

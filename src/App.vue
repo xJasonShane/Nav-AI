@@ -10,10 +10,22 @@ import Toast from './components/Toast.vue'
 import Icon from './components/Icon.vue'
 
 // 低频弹窗按需加载：不进入首屏关键路径。Modal 保持同步——删除确认要在点击后立即出现
-const SiteModal = defineAsyncComponent(() => import('./components/SiteModal.vue'))
-const CategoryModal = defineAsyncComponent(() => import('./components/CategoryModal.vue'))
-const DataModal = defineAsyncComponent(() => import('./components/DataModal.vue'))
-const SettingsModal = defineAsyncComponent(() => import('./components/SettingsModal.vue'))
+// delay 避免慢网下白屏闪烁；失败自动重试两次，仍失败则交给全局错误提示条
+function asyncModal(loader) {
+  return defineAsyncComponent({
+    loader,
+    delay: 150,
+    timeout: 10000,
+    onError(error, retry, fail, attempts) {
+      if (attempts < 3) retry()
+      else fail()
+    },
+  })
+}
+const SiteModal = asyncModal(() => import('./components/SiteModal.vue'))
+const CategoryModal = asyncModal(() => import('./components/CategoryModal.vue'))
+const DataModal = asyncModal(() => import('./components/DataModal.vue'))
+const SettingsModal = asyncModal(() => import('./components/SettingsModal.vue'))
 import {
   store,
   categoryIndex,
@@ -24,6 +36,10 @@ import {
   removeSites,
   restoreSites,
   updateSite,
+  updateSites,
+  addTagToSites,
+  captureSnapshot,
+  restoreSnapshot,
   storageNotice,
   clearStorageNotice,
 } from './store/data.js'
@@ -42,10 +58,14 @@ const bulkMode = ref(false)
 /** 批量模式下已选中的站点 id */
 const selected = ref(new Set())
 const bulkTarget = ref('')
+/** 批量加标签的输入值 */
+const bulkTag = ref('')
 const sidebarOpen = ref(false)
 const mainRef = ref(null)
 /** 备份提醒（超过 30 天未导出时出现；关闭后 7 天内不再提示） */
 const backupNotice = ref('')
+/** 标签过滤（空串表示不过滤）；独立于 selectedId，避免把标签塞进分类联合类型 */
+const activeTag = ref('')
 
 /* ------- 弹窗状态 ------- */
 const siteModal = ref(null) // { site, categoryId } | null
@@ -64,20 +84,53 @@ const categoryNames = computed(() => {
 })
 
 const search = useSiteSearch(store.sites, categoryNames)
-// 排序模式下关闭「置顶优先」：让 ↑↓ 与卡片显示顺序严格一致
-const nav = useNavView({ pinnedFirst: () => !orderMode.value })
+// 排序模式下关闭「置顶优先」：让 ↑↓ 与卡片显示顺序严格一致；tag 作为 getter 保持响应式
+const nav = useNavView({ pinnedFirst: () => !orderMode.value, tag: () => activeTag.value })
 const { query, searching, results: searchResults, activeIndex, activeDescendant } = search
 const { selectedId, groups } = nav
 
 /** 使用统计类虚拟视图（不是真实分类，不提供排序/添加到分类） */
 const isVirtualView = computed(() => selectedId.value === 'recent' || selectedId.value === 'frequent')
+/** 标签过滤视图：同样不提供排序/添加到分类，避免给筛选结果写入未打标签的站点 */
+const isTagView = computed(() => !!activeTag.value)
 
 /** 新增站点时的默认分类：虚拟视图与「未分类」都落到未分类 */
 const defaultCategoryId = computed(() =>
-  selectedId.value && selectedId.value !== 'uncategorized' && !isVirtualView.value ? selectedId.value : null
+  selectedId.value &&
+  selectedId.value !== 'uncategorized' &&
+  !isVirtualView.value &&
+  !isTagView.value
+    ? selectedId.value
+    : null
 )
 
 const categoryOptions = computed(() => flattenCategories(store.categories))
+
+/** 标签 → 站点数；供侧栏标签入口与「标签失效自动清除」共用 */
+const tagCounts = computed(() => {
+  const map = new Map()
+  for (const site of store.sites) {
+    for (const tag of site.tags || []) map.set(tag, (map.get(tag) || 0) + 1)
+  }
+  return map
+})
+
+/** 侧栏展示的高频标签（最多 8 个；当前筛选标签始终保留在列表中） */
+const topTags = computed(() => {
+  const list = [...tagCounts.value.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'zh-CN'))
+    .slice(0, 8)
+    .map(([name, count]) => ({ name, count }))
+  if (activeTag.value && !list.some((tag) => tag.name === activeTag.value) && tagCounts.value.has(activeTag.value)) {
+    list.push({ name: activeTag.value, count: tagCounts.value.get(activeTag.value) })
+  }
+  return list
+})
+
+// 标签被全部删除或改名后，自动退出失效的筛选
+watch(tagCounts, (map) => {
+  if (activeTag.value && !map.has(activeTag.value)) activeTag.value = ''
+})
 
 /** 跳到主内容（skip link）：聚焦主区而不改变 URL */
 function focusMain() {
@@ -101,16 +154,24 @@ function toggleBulk() {
     orderMode.value = false
     search.reset()
   }
+  bulkTag.value = ''
 }
 
 const selectedTitle = computed(() => {
   if (searching.value) return `搜索结果（${searchResults.value.length}）`
-  if (selectedId.value === null) return '全部分类'
-  if (selectedId.value === 'uncategorized') return '未分类'
-  if (selectedId.value === 'recent') return '最近打开'
-  if (selectedId.value === 'frequent') return '最常访问'
-  return nav.selectedCategory.value?.name || ''
+  let base = ''
+  if (selectedId.value === null) base = '全部分类'
+  else if (selectedId.value === 'uncategorized') base = '未分类'
+  else if (selectedId.value === 'recent') base = '最近打开'
+  else if (selectedId.value === 'frequent') base = '最常访问'
+  else base = nav.selectedCategory.value?.name || ''
+  return activeTag.value ? `${base} · #${activeTag.value}` : base
 })
+
+/** 空态文案：标签筛选无命中时明确说明是「标签」而不是分类为空 */
+const emptyDesc = computed(() =>
+  activeTag.value ? `没有带 #${activeTag.value} 的站点` : '该分类下还没有站点'
+)
 
 /** 点击站点卡片时记录使用情况：写入走持久化节流，不会每次点击都同步落盘 */
 function markVisited(site) {
@@ -153,6 +214,7 @@ function toggleCollapse(key) {
 
 function selectCategory(id) {
   nav.select(id)
+  activeTag.value = ''
   search.reset()
   // 虚拟视图不支持手工排序：切入时退出排序模式
   if (id === 'recent' || id === 'frequent') orderMode.value = false
@@ -161,6 +223,18 @@ function selectCategory(id) {
   // 批量模式下切换分类：旧选中项已不可见，必须清空，否则「已选 N 项」与实际不符，
   // 且批量移动/删除会作用到看不见的站点
   if (selected.value.size) selected.value = new Set()
+  bulkTag.value = ''
+}
+
+/** 标签筛选：同一标签再次点击取消；切换标签时退出排序/批量并清空选择 */
+function selectTag(tag) {
+  activeTag.value = activeTag.value === tag ? '' : tag
+  search.reset()
+  orderMode.value = false
+  bulkMode.value = false
+  selected.value = new Set()
+  bulkTag.value = ''
+  window.scrollTo(0, 0)
 }
 
 /** 排序模式下拖到分组空白处 = 移动到该分类（空分类因此也能接收拖拽） */
@@ -184,6 +258,11 @@ const visibleSites = computed(() =>
 const selectedCount = computed(() => selected.value.size)
 const allSelected = computed(
   () => visibleSites.value.length > 0 && selectedCount.value === visibleSites.value.length
+)
+/** 当前选中的站点对象（用于判断是否全部已置顶） */
+const selectedSites = computed(() => store.sites.filter((site) => selected.value.has(site.id)))
+const allPinned = computed(
+  () => selectedSites.value.length > 0 && selectedSites.value.every((site) => site.pinned)
 )
 
 function toggleSelect(id) {
@@ -212,6 +291,38 @@ function applyBulkMove() {
   }
   const name = categoryId ? findCategory(categoryId)?.node?.name || '所选分类' : '未分类'
   showToast(`已把 ${moved} 个站点移动到「${name}」`)
+}
+
+/** 批量置顶 / 取消置顶：整批可撤销 */
+function applyBulkPin() {
+  const ids = [...selected.value]
+  if (!ids.length) return
+  const pinned = !allPinned.value
+  const snapshot = captureSnapshot()
+  const changed = updateSites(ids, { pinned })
+  if (!changed) return
+  showUndo(`已${pinned ? '置顶' : '取消置顶'} ${changed} 个站点`, () => {
+    restoreSnapshot(snapshot)
+    mainRef.value?.focus()
+  })
+}
+
+/** 批量加标签：已有该标签或标签已满 8 个的站点自动跳过，整批可撤销 */
+function applyBulkTag() {
+  const tag = bulkTag.value.trim()
+  const ids = [...selected.value]
+  if (!tag || !ids.length) return
+  const snapshot = captureSnapshot()
+  const changed = addTagToSites(ids, tag)
+  bulkTag.value = ''
+  if (!changed) {
+    showToast(`所选站点都已有「${tag}」标签，或标签已满 8 个`)
+    return
+  }
+  showUndo(`已给 ${changed} 个站点加上「${tag}」`, () => {
+    restoreSnapshot(snapshot)
+    mainRef.value?.focus()
+  })
 }
 
 /** 删除后把焦点落回原位置：优先下一张卡片，其次上一张，最后主区 */
@@ -386,8 +497,11 @@ function dismissNotice() {
   <div class="layout">
     <SideBar
       :selected-id="selectedId"
+      :active-tag="activeTag"
+      :tags="topTags"
       :open="sidebarOpen"
       @select="selectCategory"
+      @select-tag="selectTag"
       @manage-categories="showCategoryModal = true"
       @open-settings="showSettingsModal = true"
       @close="sidebarOpen = false"
@@ -432,7 +546,7 @@ function dismissNotice() {
           <h1 class="section-title">{{ selectedTitle }}</h1>
           <div v-if="admin" class="view-ops">
             <button
-              v-if="!isVirtualView"
+              v-if="!isVirtualView && !isTagView"
               class="btn"
               :class="orderMode ? 'btn-primary' : 'btn-ghost'"
               type="button"
@@ -452,7 +566,7 @@ function dismissNotice() {
               <Icon name="check" :stroke="2.2" />
               {{ bulkMode ? '完成批量' : '批量' }}
             </button>
-            <button v-if="!orderMode && !bulkMode" class="btn btn-ghost add-site-btn" type="button" @click="siteModal = { site: null, categoryId: defaultCategoryId }">
+            <button v-if="!orderMode && !bulkMode && !isTagView" class="btn btn-ghost add-site-btn" type="button" @click="siteModal = { site: null, categoryId: defaultCategoryId }">
               <Icon name="plus" :stroke="2.2" />
               添加站点
             </button>
@@ -483,6 +597,22 @@ function dismissNotice() {
               {{ (opt.depth ? '　' : '') + opt.name }}
             </option>
           </select>
+          <button class="btn btn-ghost" type="button" :disabled="!selectedCount" @click="applyBulkPin">
+            {{ allPinned ? '取消置顶' : '置顶选中' }}
+          </button>
+          <input
+            v-model="bulkTag"
+            class="field-input bulk-select"
+            type="text"
+            maxlength="24"
+            placeholder="标签名…"
+            aria-label="批量添加标签"
+            :disabled="!selectedCount"
+            @keyup.enter="applyBulkTag"
+          />
+          <button class="btn btn-ghost" type="button" :disabled="!selectedCount || !bulkTag.trim()" @click="applyBulkTag">
+            加标签
+          </button>
           <button class="btn btn-danger-solid" type="button" :disabled="!selectedCount" @click="bulkDelete">
             删除选中
           </button>
@@ -510,7 +640,7 @@ function dismissNotice() {
                 </button>
                 <span class="g-icon">{{ g.icon }}</span>{{ g.title }}
                 <span class="badge">{{ g.sites.length + g.children.reduce((n, c) => n + c.sites.length, 0) }}</span>
-                <button v-if="admin && !orderMode && !bulkMode" class="g-add" type="button" title="添加站点到该分类" aria-label="添加站点到该分类" @click="siteModal = { site: null, categoryId: g.key }">
+                <button v-if="admin && !orderMode && !bulkMode && !isTagView" class="g-add" type="button" title="添加站点到该分类" aria-label="添加站点到该分类" @click="siteModal = { site: null, categoryId: g.key }">
                   <Icon name="plus" :stroke="2.2" />
                 </button>
               </h2>
@@ -531,7 +661,7 @@ function dismissNotice() {
                 @toggle-select="toggleSelect(s.id)"
                 @visit="markVisited(s)"
               />
-              <button v-if="admin && !orderMode && !bulkMode && g.key !== 'uncat'" class="add-card btn-dashed" type="button" @click="siteModal = { site: null, categoryId: g.key }">
+              <button v-if="admin && !orderMode && !bulkMode && !isTagView && g.key !== 'uncat'" class="add-card btn-dashed" type="button" @click="siteModal = { site: null, categoryId: g.key }">
                 <Icon name="plus" :stroke="2.2" />
                 添加站点
               </button>
@@ -548,7 +678,7 @@ function dismissNotice() {
               <h3 v-if="child.sites.length" class="sub-title">
                 <span class="g-icon">{{ child.icon }}</span>{{ child.title }}
                 <span class="badge">{{ child.sites.length }}</span>
-                <button v-if="admin && !orderMode && !bulkMode" class="g-add" type="button" title="添加站点到该子分类" aria-label="添加站点到该子分类" @click="siteModal = { site: null, categoryId: child.key }">
+                <button v-if="admin && !orderMode && !bulkMode && !isTagView" class="g-add" type="button" title="添加站点到该子分类" aria-label="添加站点到该子分类" @click="siteModal = { site: null, categoryId: child.key }">
                   <Icon name="plus" :stroke="2.2" />
                 </button>
               </h3>
@@ -572,8 +702,9 @@ function dismissNotice() {
         </template>
 
         <!-- 兜底空状态：任何「没有可渲染分组」的情况都不允许留下纯空白主区 -->
-        <EmptyState v-else icon="📭" desc="该分类下还没有站点">
-          <button v-if="admin" class="btn btn-primary" type="button" @click="siteModal = { site: null, categoryId: defaultCategoryId }">添加站点</button>
+        <EmptyState v-else icon="📭" :desc="emptyDesc">
+          <button v-if="isTagView" class="btn btn-ghost" type="button" @click="activeTag = ''">清除标签筛选</button>
+          <button v-else-if="admin" class="btn btn-primary" type="button" @click="siteModal = { site: null, categoryId: defaultCategoryId }">添加站点</button>
           <button v-else class="btn btn-ghost" type="button" @click="admin = true">开启管理模式去添加</button>
         </EmptyState>
       </template>
@@ -581,7 +712,7 @@ function dismissNotice() {
   </div>
 
   <!-- 悬浮添加按钮（管理模式 + 移动端友好） -->
-  <button v-if="admin && !searching && !orderMode && !bulkMode" class="fab" type="button" title="添加站点" aria-label="添加站点" @click="siteModal = { site: null, categoryId: null }">
+  <button v-if="admin && !searching && !orderMode && !bulkMode && !isTagView" class="fab" type="button" title="添加站点" aria-label="添加站点" @click="siteModal = { site: null, categoryId: null }">
     <Icon name="plus" :size="22" :stroke="2.2" />
   </button>
 

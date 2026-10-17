@@ -224,6 +224,54 @@ check('文字主色统一走 accent-text', () => {
   return bad
 })
 
+check('迁移链完整（2..DATA_VERSION）', () => {
+  const src = read('src/store/data.js')
+  const version = Number(src.match(/export const DATA_VERSION = (\d+)/)?.[1])
+  if (!version) return ['未解析到 DATA_VERSION']
+  const block = src.match(/const MIGRATIONS = \{([\s\S]*?)\n\}/)?.[1] || ''
+  const keys = [...block.matchAll(/^\s{2}(\d+):/gm)].map((m) => Number(m[1]))
+  const bad = []
+  for (let v = 2; v <= version; v += 1) {
+    if (!keys.includes(v)) bad.push(`MIGRATIONS 缺少 ${v}`)
+  }
+  const extra = keys.filter((v) => v < 2 || v > version)
+  if (extra.length) bad.push(`MIGRATIONS 存在越界键：${extra.join(', ')}`)
+  if (new Set(keys).size !== keys.length) bad.push('MIGRATIONS 存在重复键')
+  return bad
+})
+
+check('Icon 名称存在（<Icon name="…">）', () => {
+  const icon = read('src/components/Icon.vue')
+  const block = icon.match(/const PATHS = \{([\s\S]*?)\n\}/)?.[1] || ''
+  const names = new Set([...block.matchAll(/^\s{2}([a-zA-Z]+):/gm)].map((m) => m[1]))
+  if (!names.size) return ['未解析到 Icon PATHS']
+
+  const bad = []
+  for (const file of vueFiles) {
+    if (rel(file) === 'src/components/Icon.vue') continue
+    for (const { no, text } of readLines(file)) {
+      for (const match of text.matchAll(/<Icon\b[^>]*?(?<!:)name="([^"]+)"/g)) {
+        if (!names.has(match[1])) bad.push(`${rel(file)}:${no} 未定义的图标：${match[1]}`)
+      }
+    }
+  }
+  return bad
+})
+
+check('虚拟视图已注册（grouping ↔ useNavView）', () => {
+  const nav = read('src/composables/useNavView.js')
+  const block = nav.match(/VIRTUAL_VIEWS = new Set\(\[([\s\S]*?)\]\)/)?.[1] || ''
+  const registered = [...block.matchAll(/'([^']+)'/g)].map((m) => m[1])
+  if (!registered.length) return ['未解析到 VIRTUAL_VIEWS']
+
+  const grouping = read('src/utils/grouping.js')
+  const used = [...new Set([...grouping.matchAll(/selectedId === '([^']+)'/g)].map((m) => m[1]))]
+  const bad = []
+  for (const id of used) if (!registered.includes(id)) bad.push(`grouping 使用 ${id} 但未在 VIRTUAL_VIEWS 注册`)
+  for (const id of registered) if (!used.includes(id)) bad.push(`VIRTUAL_VIEWS 注册了 ${id} 但 grouping 未处理`)
+  return bad
+})
+
 check('无 console.log 残留', () => {
   const bad = []
   for (const file of srcFiles.filter((f) => ['.js', '.vue'].includes(extname(f)))) {
@@ -240,6 +288,34 @@ check('SFC 样式必须 scoped', () => {
     const text = readFileSync(file, 'utf8')
     for (const tag of text.matchAll(/<style([^>]*)>/g)) {
       if (!/\bscoped\b/.test(tag[1])) bad.push(`${rel(file)} 存在未 scoped 的 <style> 块`)
+    }
+  }
+  return bad
+})
+
+check('离线资源清单完整（sw-assets.json）', () => {
+  const dist = join(ROOT, 'dist')
+  if (!existsSync(dist)) return []
+  if (!read('public/sw.js').includes('sw-assets.json')) return ['public/sw.js 未引用 sw-assets.json']
+
+  const listPath = join(dist, 'sw-assets.json')
+  if (!existsSync(listPath)) return ['缺少 dist/sw-assets.json（需在 vite.config.js 构建期生成）']
+  const list = JSON.parse(readFileSync(listPath, 'utf8'))
+  if (!Array.isArray(list)) return ['sw-assets.json 不是数组']
+
+  const manifestPath = join(dist, '.vite', 'manifest.json')
+  if (!existsSync(manifestPath)) return ['缺少 dist/.vite/manifest.json']
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  const expected = new Set()
+  for (const item of Object.values(manifest)) {
+    if (item && typeof item.file === 'string' && /\.(js|css)$/.test(item.file)) expected.add(`./${item.file}`)
+  }
+
+  const bad = []
+  for (const file of expected) if (!list.includes(file)) bad.push(`sw-assets.json 缺少 ${file}`)
+  for (const file of list) {
+    if (typeof file !== 'string' || !existsSync(join(dist, file.replace('./', '')))) {
+      bad.push(`sw-assets.json 引用了不存在的文件：${file}`)
     }
   }
   return bad

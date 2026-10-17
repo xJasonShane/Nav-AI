@@ -7,10 +7,14 @@ import Icon from './Icon.vue'
 
 const props = defineProps({
   selectedId: { type: String, default: null },
+  /** 当前标签过滤（空串表示未过滤） */
+  activeTag: { type: String, default: '' },
+  /** 侧栏展示的高频标签：{ name, count }[] */
+  tags: { type: Array, default: () => [] },
   open: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['select', 'manage-categories', 'open-settings', 'close'])
+const emit = defineEmits(['select', 'select-tag', 'manage-categories', 'open-settings', 'close'])
 
 /** 顶级分类站点数（含子分类） */
 function countOf(cat) {
@@ -86,6 +90,11 @@ function pick(id) {
   emit('select', id)
   emit('close')
 }
+
+function pickTag(name) {
+  emit('select-tag', name)
+  emit('close')
+}
 </script>
 
 <template>
@@ -145,6 +154,24 @@ function pick(id) {
         <span class="nav-name">未分类</span>
         <span class="badge">{{ uncategorizedCount }}</span>
       </button>
+
+      <template v-if="tags.length">
+        <p class="hint nav-label">标签</p>
+        <button
+          v-for="tag in tags"
+          :key="tag.name"
+          class="nav-item"
+          type="button"
+          :class="{ active: activeTag === tag.name }"
+          :aria-pressed="activeTag === tag.name"
+          @click="pickTag(tag.name)"
+        >
+          <span class="nav-icon">#</span>
+          <span class="nav-name">{{ tag.name }}</span>
+          <span class="badge">{{ tag.count }}</span>
+        </button>
+      </template>
+
     </nav>
 
     <div class="side-foot">
@@ -241,6 +268,10 @@ function pick(id) {
 
 .nav-item.sub {
   padding-left: 28px;
+}
+
+.nav-label {
+  padding: var(--sp-3) var(--sp-3) var(--sp-1);
 }
 
 .nav-icon {

@@ -32,10 +32,11 @@ function readLastId() {
 }
 
 /**
- * @param {{ pinnedFirst?: () => boolean }} [options]
+ * @param {{ pinnedFirst?: () => boolean, tag?: () => string }} [options]
  *   pinnedFirst：分组内是否置顶优先（排序模式应返回 false，使 ↑↓ 与显示顺序一致）
+ *   tag：当前标签过滤（空串表示不过滤）；作为 getter 传入，保持响应式追踪
  */
-export function useNavView({ pinnedFirst } = {}) {
+export function useNavView({ pinnedFirst, tag } = {}) {
   /** null = 全部 | 'uncategorized' | 'recent' | 'frequent' | 分类 id */
   const selectedId = ref(readLastId())
 
@@ -55,6 +56,7 @@ export function useNavView({ pinnedFirst } = {}) {
       findNode: (id) => findCategory(id)?.node || null,
       allSites: store.sites,
       pinnedFirst: pinnedFirst ? pinnedFirst() : true,
+      tag: tag ? tag() : '',
     })
   )
 

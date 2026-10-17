@@ -30,6 +30,8 @@ const form = reactive({
   desc: props.site?.desc || '',
   icon: props.site?.icon || '',
   categoryId: validCategoryId(props.site ? props.site.categoryId : props.categoryId),
+  tags: (props.site?.tags || []).join(', '),
+  pinned: props.site?.pinned === true,
 })
 
 const error = reactive({ name: '', url: '' })
@@ -66,6 +68,8 @@ function submit() {
     desc: form.desc.trim(),
     icon: form.icon.trim(),
     categoryId: form.categoryId || null,
+    pinned: form.pinned,
+    tags: [...new Set(form.tags.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean))].slice(0, 8),
   }
 
   if (isEdit.value) updateSite(props.site.id, payload)
@@ -174,6 +178,25 @@ function submitBulk() {
           <span class="label">图标地址</span>
           <input v-model="form.icon" class="field-input" type="text" inputmode="url" placeholder="留空将自动获取站点图标" />
         </label>
+
+        <label class="field">
+          <span class="label">标签</span>
+          <input v-model="form.tags" class="field-input" type="text" placeholder="用逗号分隔，例如：AI, 工具" maxlength="80" />
+          <span class="hint">标签会参与搜索，并显示在卡片描述下方。</span>
+        </label>
+
+        <div class="field">
+          <span class="label">置顶</span>
+          <div class="seg" role="radiogroup" aria-label="是否置顶">
+            <button class="seg-btn" type="button" role="radio" :aria-checked="!form.pinned" :class="{ active: !form.pinned }" @click="form.pinned = false">
+              普通
+            </button>
+            <button class="seg-btn" type="button" role="radio" :aria-checked="form.pinned" :class="{ active: form.pinned }" @click="form.pinned = true">
+              置顶
+            </button>
+          </div>
+          <span class="hint">置顶站点会排在所属分类的最前，排序模式下仍按手动顺序展示。</span>
+        </div>
       </template>
     </div>
 

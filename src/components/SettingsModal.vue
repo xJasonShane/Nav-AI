@@ -18,6 +18,7 @@ const THEMES = [
 const ICON_SOURCES = [
   { key: 'auto', label: '直连优先', hint: '先取站点自身 /favicon.ico，失败再走图标服务' },
   { key: 'service', label: '服务优先', hint: '先走 favicon.im，命中率更高，但域名会暴露给第三方' },
+  { key: 'none', label: '仅字母', hint: '不请求任何外部图标，完全离线可用；显示为彩色字母头像' },
 ]
 
 function onTitleInput(e) {

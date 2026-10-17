@@ -21,6 +21,17 @@ function countOf(cat) {
 
 const uncategorizedCount = computed(() => sitesOf(null).length)
 
+/** 使用统计视图的可用性：有访问记录才显示入口 */
+const visitStats = computed(() => {
+  let recent = 0
+  let frequent = 0
+  for (const site of store.sites) {
+    if (site.lastVisited > 0) recent += 1
+    if (site.visits > 0) frequent += 1
+  }
+  return { recent, frequent }
+})
+
 /** 抽屉根节点：用于初始聚焦与 Tab 焦点陷阱 */
 const drawerRef = ref(null)
 /** 抽屉打开前的焦点元素，关闭时归还 */
@@ -95,6 +106,17 @@ function pick(id) {
         <span class="nav-icon">🏠</span>
         <span class="nav-name">全部分类</span>
         <span class="badge">{{ store.sites.length }}</span>
+      </button>
+
+      <button v-if="visitStats.recent" class="nav-item" type="button" :class="{ active: selectedId === 'recent' }" :aria-current="selectedId === 'recent' ? 'true' : undefined" @click="pick('recent')">
+        <span class="nav-icon">🕘</span>
+        <span class="nav-name">最近打开</span>
+        <span class="badge">{{ visitStats.recent }}</span>
+      </button>
+      <button v-if="visitStats.frequent" class="nav-item" type="button" :class="{ active: selectedId === 'frequent' }" :aria-current="selectedId === 'frequent' ? 'true' : undefined" @click="pick('frequent')">
+        <span class="nav-icon">🔥</span>
+        <span class="nav-name">最常访问</span>
+        <span class="badge">{{ visitStats.frequent }}</span>
       </button>
 
       <template v-for="cat in store.categories" :key="cat.id">

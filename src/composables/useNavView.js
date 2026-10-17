@@ -9,12 +9,21 @@ import { buildGroups } from '../utils/grouping.js'
 /** 上次停留的分类（sessionStorage）：刷新后回到原位置，但不进入数据 schema、不影响导出 */
 const LAST_KEY = 'nav-ai-last-category'
 
+/** 非分类的虚拟视图：不参与「分类被删除」的失效回退 */
+const VIRTUAL_VIEWS = new Set(['uncategorized', 'recent', 'frequent'])
+
 function readLastId() {
   try {
     const raw = sessionStorage.getItem(LAST_KEY)
     if (!raw) return null
     if (raw === 'uncategorized') {
-      return store.sites.some((site) => !site.categoryId) ? 'uncategorized' : null
+      return store.sites.some((site) => !site.categoryId) ? raw : null
+    }
+    if (raw === 'recent') {
+      return store.sites.some((site) => site.lastVisited > 0) ? raw : null
+    }
+    if (raw === 'frequent') {
+      return store.sites.some((site) => site.visits > 0) ? raw : null
     }
     return findCategory(raw) ? raw : null
   } catch (e) {
@@ -22,8 +31,12 @@ function readLastId() {
   }
 }
 
-export function useNavView() {
-  /** null = 全部 | 'uncategorized' | 分类 id */
+/**
+ * @param {{ pinnedFirst?: () => boolean }} [options]
+ *   pinnedFirst：分组内是否置顶优先（排序模式应返回 false，使 ↑↓ 与显示顺序一致）
+ */
+export function useNavView({ pinnedFirst } = {}) {
+  /** null = 全部 | 'uncategorized' | 'recent' | 'frequent' | 分类 id */
   const selectedId = ref(readLastId())
 
   watch(selectedId, (id) => {
@@ -40,11 +53,13 @@ export function useNavView() {
       sitesOf,
       selectedId: selectedId.value,
       findNode: (id) => findCategory(id)?.node || null,
+      allSites: store.sites,
+      pinnedFirst: pinnedFirst ? pinnedFirst() : true,
     })
   )
 
   const selectedCategory = computed(() =>
-    selectedId.value && selectedId.value !== 'uncategorized'
+    selectedId.value && !VIRTUAL_VIEWS.has(selectedId.value)
       ? findCategory(selectedId.value)?.node || null
       : null
   )
@@ -54,7 +69,7 @@ export function useNavView() {
     () => store.categories,
     () => {
       const id = selectedId.value
-      if (id !== null && id !== 'uncategorized' && !findCategory(id)) selectedId.value = null
+      if (id !== null && !VIRTUAL_VIEWS.has(id) && !findCategory(id)) selectedId.value = null
     },
     { deep: true }
   )

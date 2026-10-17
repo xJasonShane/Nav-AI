@@ -14,6 +14,16 @@ export function isHttpUrl(value) {
   return safeHttpUrl(value) !== ''
 }
 
+/** URL 去重键：忽略协议、www 前缀、末尾斜杠与大小写（批量/书签/合并导入共用） */
+export function urlKey(url) {
+  return String(url || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/+$/, '')
+}
+
 /**
  * 是否是可用于导航的 http(s) 地址（表单校验用）：
  * 除协议外还要求 host 形如域名 / IP，排除 `https://foo` 这类缺少后缀的误输入。

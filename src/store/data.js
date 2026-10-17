@@ -2,19 +2,20 @@
  * 数据层：分类树 + 站点集合 + localStorage 持久化
  * 结构：
  *   categories: [{ id, name, icon, children: [...] }]   最多两级树
- *   sites:      [{ id, name, url, desc, icon, categoryId }]  categoryId 为 null 表示未分类
- *   settings:   { title, theme, accent, iconSource }
+ *   sites:      [{ id, name, url, desc, icon, categoryId, pinned, visits, lastVisited, tags }]
+ *               categoryId 为 null 表示未分类；pinned 置顶、visits/lastVisited 使用统计、tags 标签
+ *   settings:   { title, theme, accent, iconSource, density, showDesc }
  *   version:    当前 DATA_VERSION；旧数据经 migrate() 升级后再归一化
  */
 import { computed, reactive, ref, watch } from 'vue'
-import { safeHttpUrl } from '../utils/url.js'
+import { safeHttpUrl, urlKey } from '../utils/url.js'
 
 const STORAGE_KEY = 'nav-ai-data-v1'
 /** 数据损坏时的旁路备份键：避免被默认数据的首次写回覆盖，保留可人工恢复的现场 */
 const BACKUP_KEY = `${STORAGE_KEY}.bak`
 
 /** 当前数据版本：新增字段时 +1，并在 MIGRATIONS 中补一条升级函数 */
-export const DATA_VERSION = 3
+export const DATA_VERSION = 4
 
 /** 主色预设（与 src/style.css 的 html[data-accent=…] 一一对应） */
 export const ACCENT_PRESETS = [
@@ -26,7 +27,8 @@ export const ACCENT_PRESETS = [
   { key: 'rose', label: '玫瑰粉', color: '#ec4899' },
 ]
 const ACCENT_KEYS = ACCENT_PRESETS.map((p) => p.key)
-const ICON_SOURCES = ['auto', 'service']
+/** 图标源：auto = 直连优先，service = 图标服务优先，none = 仅字母头像（零外部请求） */
+const ICON_SOURCES = ['auto', 'service', 'none']
 /** 卡片密度预设（与 style.css 的 html[data-density=…] 对应） */
 export const DENSITIES = [
   { key: 'comfortable', label: '舒适' },
@@ -43,6 +45,15 @@ const MIGRATIONS = {
   2: (data) => ({ ...data, settings: { iconSource: 'auto', accent: 'default', ...(data.settings || {}) } }),
   /** 2 → 3：settings 增加 density（卡片密度）与 showDesc（是否显示描述） */
   3: (data) => ({ ...data, settings: { density: 'comfortable', showDesc: true, ...(data.settings || {}) } }),
+  /** 3 → 4：站点增加 pinned（置顶）/ visits / lastVisited（使用统计）/ tags（标签） */
+  4: (data) => ({
+    ...data,
+    sites: (Array.isArray(data.sites) ? data.sites : []).map((site) =>
+      site && typeof site === 'object'
+        ? { pinned: false, visits: 0, lastVisited: 0, tags: [], ...site }
+        : site
+    ),
+  }),
 }
 
 /** 把任意版本的数据升级到 DATA_VERSION（无法识别的字段由 normalizeData 兜底） */
@@ -166,6 +177,12 @@ export function normalizeData(input) {
         desc: typeof s.desc === 'string' ? s.desc : '',
         icon: typeof s.icon === 'string' ? s.icon : '',
         categoryId: valid ? s.categoryId : null,
+        pinned: s.pinned === true,
+        visits: Number.isFinite(s.visits) ? Math.max(0, Math.floor(s.visits)) : 0,
+        lastVisited: Number.isFinite(s.lastVisited) ? Math.max(0, s.lastVisited) : 0,
+        tags: Array.isArray(s.tags)
+          ? [...new Set(s.tags.filter((t) => typeof t === 'string' && t.trim()).map((t) => t.trim()))].slice(0, 8)
+          : [],
       }
     })
 
@@ -181,6 +198,12 @@ export function normalizeData(input) {
   }
 
   return { settings, categories, sites, moved }
+}
+
+/** 默认数据的规范形态：走与导入一致的归一化，保证新增字段（pinned/visits/tags 等）齐全 */
+function freshData() {
+  const { settings, categories, sites } = normalizeData(defaultData())
+  return { version: DATA_VERSION, settings, categories, sites }
 }
 
 /** 把损坏的原始内容另存到旁路键，尽量保住可人工恢复的现场 */
@@ -209,7 +232,7 @@ function load() {
       ? '读取本地数据失败，已回退为默认示例数据；原内容已备份，可在浏览器中手动恢复。'
       : '无法读取浏览器本地存储，已使用默认示例数据；本次的修改可能不会被保留。'
   }
-  return defaultData()
+  return freshData()
 }
 
 export const store = reactive(load())
@@ -405,8 +428,34 @@ export function moveCategory(id, dir) {
 
 /* ---------------- 站点操作 ---------------- */
 
-export function addSite({ name, url, desc, icon, categoryId }) {
-  store.sites.push({ id: uid(), name, url, desc, icon, categoryId: categoryId || null })
+/** 新站点统一工厂：保证 v4 新增字段都有默认值，同时保留调用方显式传入的置顶/标签 */
+function newSite({
+  name,
+  url,
+  desc = '',
+  icon = '',
+  categoryId = null,
+  pinned = false,
+  visits = 0,
+  lastVisited = 0,
+  tags = [],
+}) {
+  return {
+    id: uid(),
+    name,
+    url,
+    desc,
+    icon,
+    categoryId: categoryId || null,
+    pinned: pinned === true,
+    visits,
+    lastVisited,
+    tags: Array.isArray(tags) ? tags : [],
+  }
+}
+
+export function addSite(payload) {
+  store.sites.push(newSite(payload))
 }
 
 export function updateSite(id, patch) {
@@ -548,16 +597,6 @@ export function restoreSnapshot(snapshot) {
 
 /* ---------------- 批量导入（粘贴多行 / 浏览器书签） ---------------- */
 
-/** URL 去重键：忽略协议、www 前缀、末尾斜杠与大小写 */
-function urlKey(url) {
-  return String(url || '')
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, '')
-    .replace(/^www\./, '')
-    .replace(/\/+$/, '')
-}
-
 /** 按名称查找或创建分类路径（最多两级，更深的层级折叠到第二级） */
 function ensureCategoryPath(path) {
   const names = (Array.isArray(path) ? path : []).map((n) => String(n || '').trim()).filter(Boolean).slice(0, 2)
@@ -605,21 +644,20 @@ export function importSites(entries, fixedCategoryId) {
       categoryId = res.id
       categories += res.created
     }
-    store.sites.push({
-      id: uid(),
-      name: String(entry.name || '').trim() || key,
-      url,
-      desc: '',
-      icon: '',
-      categoryId,
-    })
+    store.sites.push(
+      newSite({
+        name: String(entry.name || '').trim() || key,
+        url,
+        categoryId,
+      })
+    )
     added += 1
   }
   return { added, skipped, categories }
 }
 
 export function resetData() {
-  Object.assign(store, defaultData())
+  Object.assign(store, freshData())
 }
 
 /* ---------------- 外观（主题 / 主色） ---------------- */

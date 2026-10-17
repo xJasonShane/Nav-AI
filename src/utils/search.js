@@ -1,7 +1,7 @@
 /**
  * 站点搜索（纯函数，便于单测）：
- * 按名称 / 所属分类 / 描述 / 网址做大小写不敏感匹配，并按相关性排序：
- *   名称前缀(100) > 名称包含(80) > 分类名包含(60) > 描述包含(40) > 网址包含(20)
+ * 按名称 / 所属分类 / 标签 / 描述 / 网址做大小写不敏感匹配，并按相关性排序：
+ *   名称前缀(100) > 名称包含(80) > 分类名包含(60) > 标签命中(50) > 描述包含(40) > 网址包含(20)
  * 同分保持数据原顺序，避免输入过程中结果跳动。
  * 空查询返回空数组（不返回全部站点），与「未搜索」状态区分开。
  *
@@ -18,6 +18,8 @@ function scoreOf(site, query, categoryNames) {
 
   const category = categoryNames ? categoryNames.get(site.categoryId || null) : ''
   if (category && category.toLowerCase().includes(query)) return 60
+
+  if ((site.tags || []).some((tag) => String(tag).toLowerCase().includes(query))) return 50
 
   if ((site.desc || '').toLowerCase().includes(query)) return 40
   if ((site.url || '').toLowerCase().includes(query)) return 20

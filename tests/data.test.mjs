@@ -91,7 +91,7 @@ test('migrate：v1 → 当前版本补齐 settings 新字段，且不覆盖已�
   assert.equal(out.settings.showDesc, true)
 })
 
-test('migrate：v2 数据只跑 2 → 3 一步，且链式迁移幂等', () => {
+test('migrate：v2 数据链式迁移到当前版本，且重复迁移幂等', () => {
   const v2 = { version: 2, settings: { title: 'T', theme: 'light', accent: 'ocean' }, categories: [], sites: [] }
   const out = migrate(v2)
   assert.equal(out.version, DATA_VERSION)
@@ -99,6 +99,27 @@ test('migrate：v2 数据只跑 2 → 3 一步，且链式迁移幂等', () => {
   assert.equal(out.settings.density, 'comfortable')
   assert.equal(out.settings.showDesc, true)
   assert.deepEqual(migrate(out), out)
+})
+
+test('migrate：v3 → v4 为站点补齐置顶与使用统计默认值', () => {
+  const out = migrate({
+    version: 3,
+    settings: {},
+    categories: [],
+    sites: [
+      { id: 's1', name: 'S1', url: 'https://s1.example' },
+      { id: 's2', name: 'S2', url: 'https://s2.example', pinned: true, visits: 3, tags: ['x'] },
+    ],
+  })
+  assert.equal(out.version, DATA_VERSION)
+  assert.equal(out.sites[0].pinned, false)
+  assert.equal(out.sites[0].visits, 0)
+  assert.equal(out.sites[0].lastVisited, 0)
+  assert.deepEqual(out.sites[0].tags, [])
+  assert.equal(out.sites[1].pinned, true, '已有值不应被默认值覆盖')
+  assert.equal(out.sites[1].visits, 3)
+  assert.deepEqual(out.sites[1].tags, ['x'])
+  assert.deepEqual(migrate(out), out, '当前版本数据再迁移应幂等')
 })
 
 test('migrate：无版本字段按 1 处理，且对当前版本数据幂等', () => {
@@ -141,8 +162,6 @@ test('normalizeData：补字段、去非法、id 去重、两级截断、失效�
   assert.equal(clean.moved, 1)
 })
 
-/* ---------------- 导入导出 ---------------- */
-
 test('normalizeData：非 http(s) 协议一律置空，伪协议无法进入卡片链接', () => {
   const clean = normalizeData({
     categories: [{ id: 'c1', name: 'C' }],
@@ -160,6 +179,29 @@ test('normalizeData：非 http(s) 协议一律置空，伪协议无法进入卡�
     '只有 http(s) 可以落库，其余统一置空'
   )
 })
+
+test('normalizeData：置顶/统计/标签字段做类型兜底与去重', () => {
+  const clean = normalizeData({
+    categories: [],
+    sites: [
+      {
+        name: 'A',
+        url: 'https://a.example',
+        pinned: 'yes',
+        visits: -3,
+        lastVisited: 'x',
+        tags: ['x', 'x', 2, ' y ', ''],
+      },
+    ],
+  })
+  const site = clean.sites[0]
+  assert.equal(site.pinned, false, '非 true 一律视为未置顶')
+  assert.equal(site.visits, 0, '负数应归零')
+  assert.equal(site.lastVisited, 0, '非数字应归零')
+  assert.deepEqual(site.tags, ['x', 'y'], '标签应去空、去重并 trim')
+})
+
+/* ---------------- 导入导出 ---------------- */
 
 test('captureSnapshot / restoreSnapshot：覆盖式导入可完整回滚', async () => {
   await fresh()
@@ -238,6 +280,12 @@ test('站点 CRUD 与顺序调整', async () => {
   addSite({ name: '新站点', url: 'https://new.example', desc: '', icon: '', categoryId: 'cat-media' })
   assert.equal(sitesOf('cat-media').length, 3)
 
+  const added = sitesOf('cat-media')[2]
+  assert.equal(added.pinned, false, '新站点默认不置顶')
+  assert.equal(added.visits, 0)
+  assert.equal(added.lastVisited, 0)
+  assert.deepEqual(added.tags, [], '新站点默认无标签')
+
   const target = sitesOf('cat-media')[2]
   updateSite(target.id, { name: '改名后' })
   assert.equal(sitesOf('cat-media')[2].name, '改名后')
@@ -247,6 +295,18 @@ test('站点 CRUD 与顺序调整', async () => {
   restoreSite(snapshot.site, snapshot.index)
   assert.equal(sitesOf('cat-media').length, 3)
   assert.equal(sitesOf('cat-media')[2].name, '改名后', '撤销应回到原位置')
+
+  // 新建时显式传入的置顶/标签不能被工厂默认值覆盖
+  addSite({
+    name: '置顶站点',
+    url: 'https://pin.example',
+    categoryId: 'cat-media',
+    pinned: true,
+    tags: ['置顶'],
+  })
+  const pinnedSite = sitesOf('cat-media').find((s) => s.name === '置顶站点')
+  assert.equal(pinnedSite.pinned, true)
+  assert.deepEqual(pinnedSite.tags, ['置顶'])
 })
 
 test('moveSiteRelative：同分类排序 + 跨分类拖拽即移动分类', async () => {
@@ -320,6 +380,22 @@ test('importSites：按 URL 去重、支持固定分类与书签路径建分类'
 })
 
 /* ---------------- 多标签同步（A6） ---------------- */
+
+test('applyExternalData：v3 数据同步后补齐 v4 站点字段', async () => {
+  await fresh()
+  const legacy = {
+    version: 3,
+    settings: { title: '旧数据' },
+    categories: [{ id: 'c1', name: 'C' }],
+    sites: [{ id: 's1', name: 'S1', url: 'https://s1.example', categoryId: 'c1' }],
+  }
+  assert.equal(applyExternalData(JSON.stringify(legacy)), true)
+  const site = store.sites.find((s) => s.id === 's1')
+  assert.equal(site.pinned, false)
+  assert.equal(site.visits, 0)
+  assert.equal(site.lastVisited, 0)
+  assert.deepEqual(site.tags, [])
+})
 
 test('applyExternalData：内容一致短路，内容不同则替换', async () => {
   await fresh()

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import Modal from './Modal.vue'
 import ConfirmCard from './ConfirmCard.vue'
 import {
@@ -10,19 +10,31 @@ import {
   importSites,
   captureSnapshot,
   restoreSnapshot,
+  normalizeData,
+  migrate,
+  DATA_VERSION,
 } from '../store/data.js'
-import { parseBookmarksHTML } from '../utils/importers.js'
+import { parseBookmarksHTML, backupToEntries, previewMerge } from '../utils/importers.js'
 import { buildSharePage } from '../utils/export-page.js'
+import { buildBookmarksHTML } from '../utils/export-bookmarks.js'
 import { showToast } from '../utils/toast.js'
 
 const emit = defineEmits(['close'])
 
 const importText = ref('')
+const importMode = ref('overwrite') // overwrite = 覆盖导入，merge = 与现有数据合并
+/** 已预览、等待确认的导入任务：{ text, mode, stats } */
+const pendingImport = ref(null)
 const message = ref('')
 const messageType = ref('ok')
 const fileInput = ref(null)
 const bookmarksInput = ref(null)
 const confirmingReset = ref(false)
+
+// 文本或模式变化后，旧预览立即失效，避免「看到 A 的统计却导入了 B」
+watch([importText, importMode], () => {
+  pendingImport.value = null
+})
 
 const stats = computed(() => {
   let subs = 0
@@ -83,38 +95,89 @@ function downloadSharePage() {
   notify('分享页已开始下载，可直接转发')
 }
 
+/** 导出浏览器书签 HTML：可与其它浏览器/工具互通 */
+function downloadBookmarks() {
+  const html = buildBookmarksHTML({ categories: store.categories, sites: store.sites })
+  triggerDownload(
+    new Blob([html], { type: 'text/html' }),
+    `nav-ai-bookmarks-${new Date().toISOString().slice(0, 10)}.html`
+  )
+  notify('书签文件已开始下载，可导入浏览器')
+}
+
 /**
- * 导入并提示结果（含被归入「未分类」的站点数）。
- * 覆盖式导入前先留快照：误选文件时可在提示条上撤销，与「删除可撤销」保持同一安全等级。
+ * 第一步：预览导入结果（不修改任何数据）。
+ * 覆盖模式用 normalizeData 预演真实导入；合并模式复用 importSites 的去重/建分类规则。
  */
-function applyImport(text) {
+function previewJSON(text) {
+  try {
+    const parsed = JSON.parse(text)
+    if (!parsed || !Array.isArray(parsed.categories) || !Array.isArray(parsed.sites)) {
+      notify('数据格式不正确：缺少 categories 或 sites 字段', 'err')
+      return
+    }
+    const declared = Number.isInteger(parsed.version) ? parsed.version : 1
+    if (declared > DATA_VERSION) {
+      notify(`数据版本 v${declared} 高于当前应用支持的 v${DATA_VERSION}，请升级应用后再导入`, 'err')
+      return
+    }
+
+    if (importMode.value === 'merge') {
+      const stats = previewMerge(store.categories, store.sites, backupToEntries(parsed))
+      pendingImport.value = { text, mode: 'merge', stats }
+      notify(
+        `合并预览：预计新增 ${stats.added} 个站点、跳过 ${stats.skipped} 个重复项、新建 ${stats.categories} 个分类`
+      )
+    } else {
+      const clean = normalizeData(migrate(parsed))
+      pendingImport.value = {
+        text,
+        mode: 'overwrite',
+        stats: { sites: clean.sites.length, categories: clean.categories.length, moved: clean.moved },
+      }
+      const moved = clean.moved ? `；${clean.moved} 个站点分类失效，将归入「未分类」` : ''
+      notify(`覆盖预览：将导入 ${clean.categories.length} 个分类 / ${clean.sites.length} 个站点${moved}`)
+    }
+  } catch (e) {
+    notify('解析失败：' + e.message, 'err')
+  }
+}
+
+/** 第二步：确认执行，执行前留快照以便撤销 */
+function confirmImport() {
+  const job = pendingImport.value
+  pendingImport.value = null
+  if (!job) return
+
   const snapshot = captureSnapshot()
   try {
-    const result = importJSON(text)
-    const extra = result.moved ? `；其中 ${result.moved} 个站点的分类已失效，已归入「未分类」` : ''
-    notify(`导入成功：${result.categories} 个分类 / ${result.sites} 个站点${extra}`)
+    if (job.mode === 'merge') {
+      const result = importSites(backupToEntries(JSON.parse(job.text)))
+      const extra = result.skipped ? `，跳过 ${result.skipped} 个重复项` : ''
+      const cats = result.categories ? `，新建 ${result.categories} 个分类` : ''
+      notify(`合并完成：新增 ${result.added} 个站点${extra}${cats}`)
+    } else {
+      const result = importJSON(job.text)
+      const extra = result.moved ? `；其中 ${result.moved} 个站点的分类已失效，已归入「未分类」` : ''
+      notify(`导入成功：${result.categories} 个分类 / ${result.sites} 个站点${extra}`)
+    }
+    importText.value = ''
     showToast('导入完成，可在 6 秒内撤销', {
       label: '撤销导入',
       run: () => {
         if (restoreSnapshot(snapshot)) notify('已恢复导入前的数据')
       },
     })
-    return true
   } catch (e) {
     notify('导入失败：' + e.message, 'err')
-    return false
   }
-}
-
-function doImportText() {
-  if (applyImport(importText.value)) importText.value = ''
 }
 
 function onFileChange(e) {
   const file = e.target.files?.[0]
   if (!file) return
   const reader = new FileReader()
-  reader.onload = () => applyImport(String(reader.result))
+  reader.onload = () => previewJSON(String(reader.result))
   reader.readAsText(file)
   e.target.value = ''
 }
@@ -171,16 +234,26 @@ function doReset() {
         <button class="btn btn-primary" type="button" @click="download">下载备份文件</button>
         <button class="btn btn-ghost" type="button" @click="copyJSON">复制到剪贴板</button>
         <button class="btn btn-ghost" type="button" @click="downloadSharePage">导出只读分享页</button>
+        <button class="btn btn-ghost" type="button" @click="downloadBookmarks">导出浏览器书签</button>
       </div>
-      <p class="hint">「只读分享页」是一份自包含的 HTML（数据与样式全部内联、不请求任何外部资源），适合直接发给他人或离线查看。</p>
+      <p class="hint">「只读分享页」是一份自包含的 HTML（数据与样式全部内联、不请求任何外部资源），适合直接发给他人或离线查看；「浏览器书签」可导入 Chrome / Edge / Firefox 等。</p>
     </section>
 
     <section class="sec">
       <h4>导入数据</h4>
-      <p class="hint">粘贴备份 JSON 内容，或选择本地备份文件（将覆盖当前数据）。</p>
+      <p class="hint">覆盖导入会替换当前全部数据（可撤销）；合并导入按网址去重，并与现有分类按名称合并。</p>
+      <div class="seg" role="radiogroup" aria-label="导入方式">
+        <button class="seg-btn" type="button" role="radio" :aria-checked="importMode === 'overwrite'" :class="{ active: importMode === 'overwrite' }" @click="importMode = 'overwrite'">
+          覆盖导入
+        </button>
+        <button class="seg-btn" type="button" role="radio" :aria-checked="importMode === 'merge'" :class="{ active: importMode === 'merge' }" @click="importMode = 'merge'">
+          合并导入
+        </button>
+      </div>
       <textarea v-model="importText" class="field-input" rows="4" aria-label="粘贴备份 JSON" placeholder='{"categories":[…],"sites":[…]}'></textarea>
       <div class="ops">
-        <button class="btn btn-primary" type="button" :disabled="!importText.trim()" @click="doImportText">从文本导入</button>
+        <button class="btn btn-primary" type="button" :disabled="!importText.trim()" @click="previewJSON(importText)">预览导入</button>
+        <button v-if="pendingImport" class="btn" :class="pendingImport.mode === 'merge' ? 'btn-primary' : 'btn-danger-solid'" type="button" @click="confirmImport">确认导入</button>
         <button class="btn btn-ghost" type="button" @click="fileInput.click()">选择备份文件…</button>
         <input ref="fileInput" type="file" accept=".json,application/json" hidden @change="onFileChange" />
       </div>
@@ -276,6 +349,11 @@ function doReset() {
 }
 
 .hint {
+  margin-bottom: var(--sp-3);
+}
+
+/* 导入方式分段控件与下方文本框的间距（全局 .seg 不带外边距） */
+.sec .seg {
   margin-bottom: var(--sp-3);
 }
 

@@ -27,7 +27,7 @@ const props = defineProps({
   categoryName: { type: String, default: '' },
 })
 
-defineEmits(['edit', 'remove', 'toggle-select'])
+defineEmits(['edit', 'remove', 'toggle-select', 'visit'])
 
 /** 字母头像配色板 */
 const PALETTE = ['#4f7cff', '#9b5cff', '#0ea5e9', '#f59e0b', '#10b981', '#ef4444', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316']
@@ -45,9 +45,10 @@ const domain = computed(() => {
   }
 })
 
-/** 图标候选链：自定义图标优先；否则按设置决定「直连站点图标」与「第三方图标服务」的先后 */
+/** 图标候选链：自定义图标优先；「仅字母」直接返回空（零外部请求）；其余按设置决定直连与服务的先后 */
 const sources = computed(() => {
   if (props.site.icon) return [props.site.icon]
+  if (store.settings.iconSource === 'none') return []
   const d = domain.value
   if (!d) return []
   const direct = `https://${d}/favicon.ico`
@@ -181,9 +182,12 @@ function onDrop(e) {
     </span>
 
     <span class="meta">
-      <span class="name">{{ site.name }}</span>
+      <span class="name">
+        <span v-if="site.pinned" class="pin-mark" aria-hidden="true" title="已置顶">★ </span>{{ site.name }}
+      </span>
       <span v-if="categoryName" class="badge cat-badge">{{ categoryName }}</span>
       <span v-if="store.settings.showDesc" class="desc">{{ site.desc || domain }}</span>
+      <span v-if="site.tags && site.tags.length" class="desc">#{{ site.tags.join(' #') }}</span>
     </span>
 
     <a
@@ -194,6 +198,7 @@ function onDrop(e) {
       rel="noopener noreferrer"
       draggable="false"
       :aria-label="site.desc ? `${site.name}：${site.desc}` : site.name"
+      @click="$emit('visit')"
     ></a>
 
     <span v-if="order" class="ops order-ops">
@@ -424,6 +429,11 @@ html[data-density='compact'] .icon {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 已置顶标记：跟随卡片主色，位于名称最前（长名称截断时仍可见） */
+.pin-mark {
+  color: var(--accent);
 }
 
 .ops {

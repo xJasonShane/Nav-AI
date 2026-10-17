@@ -9,6 +9,8 @@ import { filterSites } from '../src/utils/search.js'
 import { buildGroups, flattenCategories } from '../src/utils/grouping.js'
 import { buildSharePage, escapeHtml } from '../src/utils/export-page.js'
 import { isValidHttpUrl } from '../src/utils/url.js'
+import { backupToEntries, previewMerge } from '../src/utils/importers.js'
+import { buildBookmarksHTML } from '../src/utils/export-bookmarks.js'
 
 const SITES = [
   { id: 's1', name: 'GitHub', desc: '代码托管', url: 'https://github.com', categoryId: 'c1' },
@@ -74,6 +76,9 @@ test('filterSites：相关性排序 + 分类名命中 + 同分保持原顺序', 
     ['x', 'y'],
     '同分时保持数据原顺序'
   )
+
+  const tagged = [{ id: 't', name: 'X', desc: '', url: 'https://x.example', tags: ['AI 工具'] }]
+  assert.deepEqual(filterSites(tagged, 'ai').map((s) => s.id), ['t'], '标签参与搜索')
 })
 
 test('isValidHttpUrl：只接受带域名或 IP 的 http(s) 地址', () => {
@@ -127,6 +132,31 @@ test('buildGroups：全部 / 未分类 / 指定分类 / 失效分类', () => {
   )
 })
 
+test('buildGroups：置顶优先 + 最近打开 / 最常访问虚拟视图', () => {
+  const list = [
+    { id: 'a', name: 'A', pinned: false, categoryId: 'c1', lastVisited: 100, visits: 2 },
+    { id: 'b', name: 'B', pinned: true, categoryId: 'c1', lastVisited: 300, visits: 5 },
+    { id: 'c', name: 'C', pinned: false, categoryId: 'c1', lastVisited: 0, visits: 0 },
+  ]
+  const cats = [{ id: 'c1', name: 'C1', children: [] }]
+  const of = (id) => (id === 'c1' ? list : [])
+
+  const pinned = buildGroups({ categories: cats, sitesOf: of, selectedId: 'c1', pinnedFirst: true })
+  assert.deepEqual(pinned[0].sites.map((s) => s.id), ['b', 'a', 'c'], '置顶站点排在最前')
+  assert.deepEqual(list.map((s) => s.id), ['a', 'b', 'c'], '不得修改原数组顺序')
+
+  const plain = buildGroups({ categories: cats, sitesOf: of, selectedId: 'c1', pinnedFirst: false })
+  assert.deepEqual(plain[0].sites.map((s) => s.id), ['a', 'b', 'c'], '排序模式按原顺序')
+
+  const recent = buildGroups({ categories: [], sitesOf: () => [], selectedId: 'recent', allSites: list })
+  assert.equal(recent[0].title, '最近打开')
+  assert.deepEqual(recent[0].sites.map((s) => s.id), ['b', 'a'], '按最近访问时间倒序，过滤未访问')
+
+  const frequent = buildGroups({ categories: [], sitesOf: () => [], selectedId: 'frequent', allSites: list })
+  assert.equal(frequent[0].title, '最常访问')
+  assert.deepEqual(frequent[0].sites.map((s) => s.id), ['b', 'a'], '按访问次数倒序')
+})
+
 test('flattenCategories：两级展开且带 depth，供下拉选择使用', () => {
   const flat = flattenCategories(CATEGORIES)
   assert.deepEqual(flat.map((o) => [o.id, o.depth]), [['c1', 0], ['c1a', 1], ['c2', 0]])
@@ -158,4 +188,56 @@ test('buildSharePage：自包含、零外部资源、过滤伪协议、数据转
   assert.ok(html.includes('&lt;/script&gt;'), '转义后的名称仍应展示')
   assert.ok(!/https?:\/\/(?!github|juejin|developer|loose|evil)/.test(html), '除站点链接外不应引用外部资源')
   assert.ok(html.includes('未分类'), '未分类站点应单独成组')
+  assert.ok(html.includes('prefers-color-scheme:dark'), '分享页应跟随系统深色')
+})
+
+test('backupToEntries + previewMerge：合并导入的路径转换与预估', () => {
+  const backup = {
+    categories: [
+      { id: 'c1', name: '开发', children: [{ id: 'c1a', name: '国内', children: [] }] },
+      { id: 'c2', name: '文档', children: [] },
+    ],
+    sites: [
+      { name: 'A', url: 'https://a.example', categoryId: 'c1a' },
+      { name: '伪协议', url: 'javascript:alert(1)', categoryId: 'c1' },
+      { name: 'C', url: 'https://c.example', categoryId: null },
+    ],
+  }
+  const entries = backupToEntries(backup)
+  assert.equal(entries.length, 2, '非 http(s) 站点应被过滤')
+  assert.deepEqual(entries[0].categoryPath, ['开发', '国内'])
+  assert.deepEqual(entries[1].categoryPath, [], '未分类站点路径为空')
+
+  const stats = previewMerge(
+    [{ id: 'x', name: '开发', children: [{ id: 'x1', name: '国际', children: [] }] }],
+    [{ url: 'https://c.example' }],
+    entries
+  )
+  assert.equal(stats.added, 1, '只新增 a.example')
+  assert.equal(stats.skipped, 1, 'c.example 已存在应跳过')
+  assert.equal(stats.categories, 1, '「开发」已存在，只新建「国内」')
+})
+
+test('buildBookmarksHTML：两层文件夹、转义与伪协议过滤', () => {
+  const html = buildBookmarksHTML({
+    categories: [
+      { id: 'c1', name: '开发', children: [{ id: 'c1a', name: '国内', children: [] }] },
+      { id: 'c2', name: '空分类', children: [] },
+    ],
+    sites: [
+      { name: 'GitHub', url: 'https://github.com', categoryId: 'c1a' },
+      { name: '<script>', url: 'https://evil.example', categoryId: 'c1' },
+      { name: '伪协议', url: 'javascript:alert(1)', categoryId: 'c1' },
+      { name: '散落', url: 'https://loose.example', categoryId: null },
+    ],
+  })
+
+  assert.ok(html.startsWith('<!DOCTYPE NETSCAPE-Bookmark-file-1>'))
+  assert.ok(html.includes('<DT><H3>开发</H3>'))
+  assert.ok(html.includes('<DT><H3>国内</H3>'))
+  assert.ok(html.includes('HREF="https://github.com"'))
+  assert.ok(!html.includes('javascript:'), '伪协议站点应被丢弃')
+  assert.ok(html.includes('&lt;script&gt;'), '站点名称应转义')
+  assert.ok(html.includes('未分类'), '未分类站点单独成夹')
+  assert.ok(!html.includes('空分类'), '空分类不导出')
 })

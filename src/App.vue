@@ -23,6 +23,7 @@ import {
   moveSitesTo,
   removeSites,
   restoreSites,
+  updateSite,
   storageNotice,
   clearStorageNotice,
 } from './store/data.js'
@@ -60,9 +61,18 @@ const categoryNames = computed(() => {
 })
 
 const search = useSiteSearch(store.sites, categoryNames)
-const nav = useNavView()
+// 排序模式下关闭「置顶优先」：让 ↑↓ 与卡片显示顺序严格一致
+const nav = useNavView({ pinnedFirst: () => !orderMode.value })
 const { query, searching, results: searchResults, activeIndex, activeDescendant } = search
 const { selectedId, groups } = nav
+
+/** 使用统计类虚拟视图（不是真实分类，不提供排序/添加到分类） */
+const isVirtualView = computed(() => selectedId.value === 'recent' || selectedId.value === 'frequent')
+
+/** 新增站点时的默认分类：虚拟视图与「未分类」都落到未分类 */
+const defaultCategoryId = computed(() =>
+  selectedId.value && selectedId.value !== 'uncategorized' && !isVirtualView.value ? selectedId.value : null
+)
 
 const categoryOptions = computed(() => flattenCategories(store.categories))
 
@@ -94,12 +104,55 @@ const selectedTitle = computed(() => {
   if (searching.value) return `搜索结果（${searchResults.value.length}）`
   if (selectedId.value === null) return '全部分类'
   if (selectedId.value === 'uncategorized') return '未分类'
+  if (selectedId.value === 'recent') return '最近打开'
+  if (selectedId.value === 'frequent') return '最常访问'
   return nav.selectedCategory.value?.name || ''
 })
+
+/** 点击站点卡片时记录使用情况：写入走持久化节流，不会每次点击都同步落盘 */
+function markVisited(site) {
+  updateSite(site.id, { visits: (site.visits || 0) + 1, lastVisited: Date.now() })
+}
+
+/** 「全部分类」视图的分组折叠状态（sessionStorage 记忆；排序/批量模式下强制展开） */
+const COLLAPSED_KEY = 'nav-ai-collapsed'
+
+function readCollapsed() {
+  try {
+    const raw = JSON.parse(sessionStorage.getItem(COLLAPSED_KEY) || '[]')
+    return new Set(Array.isArray(raw) ? raw.filter((id) => typeof id === 'string') : [])
+  } catch (e) {
+    return new Set()
+  }
+}
+
+const collapsed = ref(readCollapsed())
+
+watch(collapsed, (set) => {
+  try {
+    sessionStorage.setItem(COLLAPSED_KEY, JSON.stringify([...set]))
+  } catch (e) {
+    /* 隐私模式下忽略 */
+  }
+})
+
+/** 折叠只在普通浏览时生效：排序/批量模式下必须全部展开，否则拖拽与全选范围不可见 */
+function isCollapsed(key) {
+  return !orderMode.value && !bulkMode.value && collapsed.value.has(key)
+}
+
+function toggleCollapse(key) {
+  const next = new Set(collapsed.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  collapsed.value = next
+}
 
 function selectCategory(id) {
   nav.select(id)
   search.reset()
+  // 虚拟视图不支持手工排序：切入时退出排序模式
+  if (id === 'recent' || id === 'frequent') orderMode.value = false
   // 切分类后从顶部开始：否则从长列表底部切到内容较少的分类会停在空白处
   window.scrollTo(0, 0)
   // 批量模式下切换分类：旧选中项已不可见，必须清空，否则「已选 N 项」与实际不符，
@@ -313,6 +366,7 @@ function dismissNotice() {
             :category-name="categoryNames.get(s.categoryId || null) || '未分类'"
             @edit="siteModal = { site: s, categoryId: null }"
             @remove="deleteSite(s)"
+            @visit="markVisited(s)"
           />
         </div>
         <EmptyState v-else icon="🔍" :desc="`没有找到与「${query}」匹配的站点`" />
@@ -324,6 +378,7 @@ function dismissNotice() {
           <h1 class="section-title">{{ selectedTitle }}</h1>
           <div v-if="admin" class="view-ops">
             <button
+              v-if="!isVirtualView"
               class="btn"
               :class="orderMode ? 'btn-primary' : 'btn-ghost'"
               type="button"
@@ -343,7 +398,7 @@ function dismissNotice() {
               <Icon name="check" :stroke="2.2" />
               {{ bulkMode ? '完成批量' : '批量' }}
             </button>
-            <button v-if="!orderMode && !bulkMode" class="btn btn-ghost add-site-btn" type="button" @click="siteModal = { site: null, categoryId: selectedId === 'uncategorized' ? null : selectedId }">
+            <button v-if="!orderMode && !bulkMode" class="btn btn-ghost add-site-btn" type="button" @click="siteModal = { site: null, categoryId: defaultCategoryId }">
               <Icon name="plus" :stroke="2.2" />
               添加站点
             </button>
@@ -389,6 +444,16 @@ function dismissNotice() {
           >
             <template v-if="selectedId === null">
               <h2 class="group-title">
+                <button
+                  class="icon-btn-sm collapse-btn"
+                  type="button"
+                  :aria-expanded="!isCollapsed(g.key)"
+                  :aria-label="isCollapsed(g.key) ? '展开该分组' : '收起该分组'"
+                  :title="isCollapsed(g.key) ? '展开' : '收起'"
+                  @click="toggleCollapse(g.key)"
+                >
+                  <Icon :name="isCollapsed(g.key) ? 'down' : 'up'" />
+                </button>
                 <span class="g-icon">{{ g.icon }}</span>{{ g.title }}
                 <span class="badge">{{ g.sites.length + g.children.reduce((n, c) => n + c.sites.length, 0) }}</span>
                 <button v-if="admin && !orderMode && !bulkMode" class="g-add" type="button" title="添加站点到该分类" aria-label="添加站点到该分类" @click="siteModal = { site: null, categoryId: g.key }">
@@ -397,7 +462,7 @@ function dismissNotice() {
               </h2>
             </template>
 
-            <div v-if="g.sites.length || admin" class="grid">
+            <div v-if="g.sites.length || admin" v-show="!isCollapsed(g.key)" class="grid">
               <SiteCard
                 v-for="s in g.sites"
                 :key="s.id"
@@ -406,9 +471,11 @@ function dismissNotice() {
                 :order="orderMode"
                 :bulk="bulkMode"
                 :selected="selected.has(s.id)"
+                :category-name="isVirtualView ? categoryNames.get(s.categoryId || null) || '未分类' : ''"
                 @edit="siteModal = { site: s, categoryId: null }"
                 @remove="deleteSite(s)"
                 @toggle-select="toggleSelect(s.id)"
+                @visit="markVisited(s)"
               />
               <button v-if="admin && !orderMode && !bulkMode && g.key !== 'uncat'" class="add-card btn-dashed" type="button" @click="siteModal = { site: null, categoryId: g.key }">
                 <Icon name="plus" :stroke="2.2" />
@@ -419,6 +486,7 @@ function dismissNotice() {
             <div
               v-for="child in g.children"
               :key="child.key"
+              v-show="!isCollapsed(g.key)"
               class="sub-group"
               @dragover="onGroupDragOver"
               @drop="onGroupDrop($event, child.key)"
@@ -442,6 +510,7 @@ function dismissNotice() {
                   @edit="siteModal = { site: s, categoryId: null }"
                   @remove="deleteSite(s)"
                   @toggle-select="toggleSelect(s.id)"
+                  @visit="markVisited(s)"
                 />
               </div>
             </div>
@@ -450,7 +519,7 @@ function dismissNotice() {
 
         <!-- 兜底空状态：任何「没有可渲染分组」的情况都不允许留下纯空白主区 -->
         <EmptyState v-else icon="📭" desc="该分类下还没有站点">
-          <button v-if="admin" class="btn btn-primary" type="button" @click="siteModal = { site: null, categoryId: selectedId === 'uncategorized' ? null : selectedId }">添加站点</button>
+          <button v-if="admin" class="btn btn-primary" type="button" @click="siteModal = { site: null, categoryId: defaultCategoryId }">添加站点</button>
           <button v-else class="btn btn-ghost" type="button" @click="admin = true">开启管理模式去添加</button>
         </EmptyState>
       </template>

@@ -56,7 +56,8 @@ ul{list-style:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(22
 .m{min-width:0}
 .m b{display:block;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .m em{display:block;font-style:normal;font-size:12px;color:#67718a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-footer{margin-top:36px;color:#67718a;font-size:12px}`
+footer{margin-top:36px;color:#67718a;font-size:12px}
+@media (prefers-color-scheme:dark){body{background:#0a0f1b;color:#e8ecf6}.c a{background:#161d2e;border-color:#253048}.tip,.m em,footer,h3{color:#a6b0c5}}`
 
 /**
  * 生成只读分享页
@@ -93,6 +94,7 @@ export function buildSharePage({ title, categories = [], sites = [], exportedAt 
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
 <title>${escapeHtml(title || 'Nav-AI')}</title>
 <style>${STYLE}</style>
 </head>

@@ -6,10 +6,11 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { filterSites } from '../utils/search.js'
 
 /** @param {object[]} sites 响应式站点数组（store.sites） */
-export function useSiteSearch(sites) {
+/** @param {import('vue').ComputedRef<Map<string|null, string>>} [categoryNames] 分类 id → 名称，用于命中分类名 */
+export function useSiteSearch(sites, categoryNames) {
   const query = ref('')
   const searching = computed(() => query.value.trim().length > 0)
-  const results = computed(() => filterSites(sites, query.value))
+  const results = computed(() => filterSites(sites, query.value, categoryNames?.value))
 
   /** 当前选中项下标；-1 表示无选中 */
   const activeIndex = ref(0)

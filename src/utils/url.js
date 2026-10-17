@@ -13,3 +13,17 @@ export function safeHttpUrl(value) {
 export function isHttpUrl(value) {
   return safeHttpUrl(value) !== ''
 }
+
+/**
+ * 是否是可用于导航的 http(s) 地址（表单校验用）：
+ * 除协议外还要求 host 形如域名 / IP，排除 `https://foo` 这类缺少后缀的误输入。
+ */
+export function isValidHttpUrl(value) {
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false
+    return url.hostname === 'localhost' || url.hostname.includes('.')
+  } catch {
+    return false
+  }
+}

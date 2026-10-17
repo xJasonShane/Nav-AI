@@ -9,6 +9,7 @@ import { ref, computed, watch } from 'vue'
 import Icon from './Icon.vue'
 import { store, sitesOf, moveSite, moveSiteRelative } from '../store/data.js'
 import { isHttpUrl } from '../utils/url.js'
+import { cachedStep, rememberStep } from '../utils/favicon.js'
 import { draggingId, dropTargetId, dropAfter, resetDrag } from '../utils/drag.js'
 
 const props = defineProps({
@@ -22,6 +23,8 @@ const props = defineProps({
   selected: { type: Boolean, default: false },
   /** 命令面板式搜索中的当前选中项 */
   active: { type: Boolean, default: false },
+  /** 所属分类名（仅搜索结果传入，用于补充上下文） */
+  categoryName: { type: String, default: '' },
 })
 
 defineEmits(['edit', 'remove', 'toggle-select'])
@@ -58,15 +61,23 @@ const showImg = computed(() => !iconFailed.value && !!currentSrc.value)
 /** 只有合法 http(s) 才渲染整卡链接：空值或伪协议会让卡片不可点击（避免 href="" 刷新当前页） */
 const linkReady = computed(() => !props.order && !props.bulk && isHttpUrl(props.site.url))
 
+/** 同域名共享图标解析结果；自定义图标或无效域名不参与缓存 */
+const cacheKey = computed(() =>
+  props.site.icon || !domain.value ? '' : `${domain.value}|${store.settings.iconSource}`
+)
+
 // 站点被编辑、或图标源设置变化后重置回退链：否则上一次的失败结果会被永久沿用，
-// 用户补填图标地址后仍只显示字母头像，必须刷新才恢复
+// 用户补填图标地址后仍只显示字母头像，必须刷新才恢复。
+// 命中缓存时直接采用已知档位（-1 表示该域名全部失败，直接显示字母头像，不再发请求）
 watch(
   () => [props.site.icon, props.site.url, store.settings.iconSource],
   () => {
-    step.value = 0
-    iconFailed.value = false
+    const hit = cachedStep(cacheKey.value)
+    step.value = hit && hit > 0 ? hit : 0
+    iconFailed.value = hit === -1
     loaded.value = false
-  }
+  },
+  { immediate: true }
 )
 
 const initial = computed(() => (props.site.name || '?').trim().charAt(0).toUpperCase())
@@ -79,8 +90,14 @@ const avatarColor = computed(() => {
 })
 
 function onImgError() {
-  if (step.value < sources.value.length - 1) step.value += 1
-  else iconFailed.value = true
+  if (step.value < sources.value.length - 1) {
+    step.value += 1
+    // 记住「直连失败、已降级」的结论，同域名的其它卡片可少发一次请求
+    rememberStep(cacheKey.value, step.value)
+  } else {
+    iconFailed.value = true
+    rememberStep(cacheKey.value, -1)
+  }
 }
 
 /* ---------------- 排序模式：↑↓ 与拖拽 ---------------- */
@@ -113,7 +130,10 @@ function onDragOver(e) {
   dropTargetId.value = props.site.id
 }
 
-function onDrop() {
+function onDrop(e) {
+  // 卡片内的放置优先于分组容器：阻止冒泡，避免同一次拖拽被「移动到目标站点分类」和
+  // 「移动到分组分类」先后执行两次
+  e.stopPropagation()
   if (!props.order || !draggingId.value) return
   moveSiteRelative(draggingId.value, props.site.id, dropAfter.value)
   resetDrag()
@@ -162,6 +182,7 @@ function onDrop() {
 
     <span class="meta">
       <span class="name">{{ site.name }}</span>
+      <span v-if="categoryName" class="badge cat-badge">{{ categoryName }}</span>
       <span v-if="store.settings.showDesc" class="desc">{{ site.desc || domain }}</span>
     </span>
 
@@ -394,6 +415,15 @@ html[data-density='compact'] .icon {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 搜索结果里的所属分类：复用 .badge 外观，只做对齐与截断 */
+.cat-badge {
+  align-self: flex-start;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ops {

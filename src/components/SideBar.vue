@@ -1,7 +1,8 @@
 <script setup>
-import { computed, watch, onBeforeUnmount } from 'vue'
+import { computed, watch, onBeforeUnmount, ref, nextTick } from 'vue'
 import { store, sitesOf } from '../store/data.js'
 import { lockScroll, unlockScroll } from '../utils/scroll-lock.js'
+import { FOCUSABLE, trapTab } from '../utils/focus-trap.js'
 import Icon from './Icon.vue'
 
 const props = defineProps({
@@ -20,39 +21,54 @@ function countOf(cat) {
 
 const uncategorizedCount = computed(() => sitesOf(null).length)
 
-/** Esc 关闭抽屉 */
-function onEsc(e) {
-  if (e.key === 'Escape') emit('close')
+/** 抽屉根节点：用于初始聚焦与 Tab 焦点陷阱 */
+const drawerRef = ref(null)
+/** 抽屉打开前的焦点元素，关闭时归还 */
+let lastActive = null
+
+/** Esc 关闭 / Tab 在抽屉内循环（避免焦点跑到背后的顶栏与卡片） */
+function onKey(e) {
+  if (e.key === 'Escape') {
+    emit('close')
+    return
+  }
+  if (e.key === 'Tab') trapTab(drawerRef.value, e)
 }
 
-// 移动端抽屉打开时：支持 Esc 关闭 + 锁定背景滚动
+// 移动端抽屉打开时：焦点移入抽屉 + Tab 陷阱 + 锁定背景滚动
 let locked = false
 watch(
   () => props.open,
-  (v) => {
+  async (v) => {
     const isMobile = window.matchMedia('(max-width: 768px)').matches
     if (v && isMobile) {
-      document.addEventListener('keydown', onEsc)
+      lastActive = document.activeElement
+      document.addEventListener('keydown', onKey)
       if (!locked) {
         lockScroll()
         locked = true
       }
+      await nextTick()
+      drawerRef.value?.querySelector(FOCUSABLE)?.focus?.()
     } else {
-      document.removeEventListener('keydown', onEsc)
+      document.removeEventListener('keydown', onKey)
       if (locked) {
         unlockScroll()
         locked = false
       }
+      if (lastActive && document.contains(lastActive)) lastActive.focus?.()
+      lastActive = null
     }
   }
 )
 
 onBeforeUnmount(() => {
-  document.removeEventListener('keydown', onEsc)
+  document.removeEventListener('keydown', onKey)
   if (locked) {
     unlockScroll()
     locked = false
   }
+  if (lastActive && document.contains(lastActive)) lastActive.focus?.()
 })
 
 function pick(id) {
@@ -66,7 +82,7 @@ function pick(id) {
     <div class="drawer-mask" :class="{ show: open }" aria-hidden="true" @click="emit('close')"></div>
   </Teleport>
 
-  <aside class="sidebar" :class="{ open }" aria-label="分类导航">
+  <aside ref="drawerRef" class="sidebar" :class="{ open }" aria-label="分类导航" tabindex="-1">
     <div class="drawer-head">
       <span class="drawer-title">分类导航</span>
       <button class="icon-btn" type="button" aria-label="关闭菜单" @click="emit('close')">

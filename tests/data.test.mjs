@@ -64,16 +64,18 @@ const {
   applyExternalData,
   captureSnapshot,
   restoreSnapshot,
+  flushPersist,
   storageWarning,
 } = data
 
 // 模拟 main.js 的首屏外观应用（模块自身只在数据变化时驱动 DOM）
 applyAppearance()
 
-/** 每个用例从默认数据开始 */
+/** 每个用例从默认数据开始（flush 掉节流中的写入，避免定时器跨用例残留） */
 async function fresh() {
   resetData()
   await nextTick()
+  flushPersist()
 }
 
 /* ---------------- 迁移（B2） ---------------- */
@@ -179,6 +181,13 @@ test('captureSnapshot / restoreSnapshot：覆盖式导入可完整回滚', async
   assert.equal(store.categories.length, catCount)
   assert.ok(store.sites.some((s) => s.name === 'GitHub'), '站点内容应完整还原')
   assert.equal(restoreSnapshot(null), false, '空快照应安全返回 false')
+})
+
+test('importJSON：拒绝高于当前版本的数据，避免静默丢字段', () => {
+  assert.throws(
+    () => importJSON(JSON.stringify({ version: DATA_VERSION + 1, categories: [], sites: [] })),
+    /高于当前应用支持/
+  )
 })
 
 test('importJSON：归一化 + 统计返回，且导出可往返', () => {
@@ -388,9 +397,11 @@ test('写入失败产生提示，恢复后自动清除', async () => {
   failWrites = true
   addSite({ name: '写不进去', url: 'https://x.example', desc: '', icon: '', categoryId: null })
   await nextTick()
+  flushPersist()
   assert.ok(storageWarning.value)
   failWrites = false
   addSite({ name: '可以写了', url: 'https://y.example', desc: '', icon: '', categoryId: null })
   await nextTick()
+  flushPersist()
   assert.equal(storageWarning.value, '')
 })

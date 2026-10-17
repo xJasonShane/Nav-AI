@@ -214,7 +214,31 @@ function load() {
 
 export const store = reactive(load())
 
+/** 持久化节流：把输入类改动合并为一次全量写入，避免每个字符都序列化 + 同步落盘 */
+const PERSIST_DELAY = 200
 let lastPersisted = ''
+let persistTimer = 0
+let pendingJSON = ''
+
+function persist(json) {
+  try {
+    localStorage.setItem(STORAGE_KEY, json)
+    lastPersisted = json
+    if (storageWarning.value) storageWarning.value = '' // 写入恢复正常后清除提示
+  } catch (e) {
+    storageWarning.value = '数据保存失败：浏览器存储空间不足或已被禁用，最近的修改可能无法保留，请尽快导出备份。'
+  }
+}
+
+/** 立即落盘并清空待写入内容（页面隐藏 / 卸载前、测试使用） */
+export function flushPersist() {
+  if (persistTimer) {
+    clearTimeout(persistTimer)
+    persistTimer = 0
+  }
+  if (pendingJSON && pendingJSON !== lastPersisted) persist(pendingJSON)
+  pendingJSON = ''
+}
 
 // 数据变化时自动持久化（immediate 确保首次加载即写入当前存储键）
 watch(
@@ -223,16 +247,24 @@ watch(
     const json = JSON.stringify(val)
     // 内容未变（例如刚由其它标签页同步过来）时跳过写回，避免多余的存储事件与写回回环
     if (json === lastPersisted) return
-    try {
-      localStorage.setItem(STORAGE_KEY, json)
-      lastPersisted = json
-      if (storageWarning.value) storageWarning.value = '' // 写入恢复正常后清除提示
-    } catch (e) {
-      storageWarning.value = '数据保存失败：浏览器存储空间不足或已被禁用，最近的修改可能无法保留，请尽快导出备份。'
-    }
+    pendingJSON = json
+    if (persistTimer) return
+    persistTimer = setTimeout(() => {
+      persistTimer = 0
+      if (pendingJSON && pendingJSON !== lastPersisted) persist(pendingJSON)
+      pendingJSON = ''
+    }, PERSIST_DELAY)
   },
   { deep: true, immediate: true }
 )
+
+if (typeof window !== 'undefined' && window.addEventListener) {
+  // 页面进入后台或被卸载时把节流窗口内的改动落盘，避免丢失最后一次编辑
+  window.addEventListener('pagehide', flushPersist)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushPersist()
+  })
+}
 
 /**
  * 多标签页同步：应用其它标签页写入的数据。
@@ -243,8 +275,17 @@ export function applyExternalData(json) {
     const parsed = JSON.parse(json)
     const { settings, categories, sites } = normalizeData(migrate(parsed))
     const next = { version: DATA_VERSION, settings, categories, sites }
-    if (JSON.stringify(next) === JSON.stringify(store)) return false
+    const nextJSON = JSON.stringify(next)
+    if (nextJSON === JSON.stringify(store)) return false
     Object.assign(store, next)
+    // 外部数据已成为当前内容：同步 lastPersisted 并丢弃待写入任务，
+    // 避免本页把刚同步来的数据再写回一次（多标签回环的第二道防护）
+    lastPersisted = nextJSON
+    pendingJSON = ''
+    if (persistTimer) {
+      clearTimeout(persistTimer)
+      persistTimer = 0
+    }
     return true
   } catch (e) {
     return false
@@ -475,6 +516,11 @@ export function importJSON(text) {
   const parsed = JSON.parse(text)
   if (!parsed || !Array.isArray(parsed.categories) || !Array.isArray(parsed.sites)) {
     throw new Error('数据格式不正确：缺少 categories 或 sites 字段')
+  }
+  // 反向保护：把高版本备份导入旧版会静默丢弃未知字段，这里明确拒绝而不是「成功」降级
+  const declared = Number.isInteger(parsed.version) ? parsed.version : 1
+  if (declared > DATA_VERSION) {
+    throw new Error(`数据版本 v${declared} 高于当前应用支持的 v${DATA_VERSION}，请升级应用后再导入`)
   }
   const { settings, categories, sites, moved } = normalizeData(migrate(parsed))
   Object.assign(store, { version: DATA_VERSION, settings, categories, sites })

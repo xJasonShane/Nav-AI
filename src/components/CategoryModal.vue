@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, ref } from 'vue'
+import { nextTick, reactive, ref } from 'vue'
 import Modal from './Modal.vue'
 import ConfirmCard from './ConfirmCard.vue'
 import Icon from './Icon.vue'
@@ -41,6 +41,12 @@ function startRename(node) {
   renameForm.icon = node.icon || ''
   addingChildOf.value = null
   showTopForm.value = false
+  // 进入重命名后直接聚焦并全选名称，避免用户还要再点一次输入框
+  nextTick(() => {
+    const input = document.querySelector('[data-rename-input]')
+    input?.focus()
+    input?.select?.()
+  })
 }
 
 function saveRename(id) {
@@ -111,7 +117,7 @@ function move(node, dir) {
         <div class="cat-row">
           <template v-if="renaming === cat.id">
             <input v-model="renameForm.icon" class="field-input icon-input" type="text" placeholder="图标" aria-label="分类图标" maxlength="2" />
-            <input v-model="renameForm.name" class="field-input name-input" type="text" placeholder="分类名称" aria-label="分类名称" @keyup.enter="saveRename(cat.id)" />
+            <input v-model="renameForm.name" class="field-input name-input" type="text" placeholder="分类名称" aria-label="分类名称" data-rename-input @keyup.enter="saveRename(cat.id)" />
             <button class="icon-btn-sm op ok" type="button" title="保存" aria-label="保存" @click="saveRename(cat.id)">
               <Icon name="check" />
             </button>
@@ -148,7 +154,7 @@ function move(node, dir) {
           <div v-for="(child, j) in cat.children" :key="child.id" class="cat-row sub">
             <template v-if="renaming === child.id">
               <input v-model="renameForm.icon" class="field-input icon-input" type="text" placeholder="图标" aria-label="子分类图标" maxlength="2" />
-              <input v-model="renameForm.name" class="field-input name-input" type="text" placeholder="子分类名称" aria-label="子分类名称" @keyup.enter="saveRename(child.id)" />
+              <input v-model="renameForm.name" class="field-input name-input" type="text" placeholder="子分类名称" aria-label="子分类名称" data-rename-input @keyup.enter="saveRename(child.id)" />
               <button class="icon-btn-sm op ok" type="button" title="保存" aria-label="保存" @click="saveRename(child.id)">
                 <Icon name="check" />
               </button>

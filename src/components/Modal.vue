@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { lockScroll, unlockScroll } from '../utils/scroll-lock.js'
+import { trapTab } from '../utils/focus-trap.js'
 import Icon from './Icon.vue'
 
 const props = defineProps({
@@ -13,33 +14,13 @@ const emit = defineEmits(['close'])
 const boxRef = ref(null)
 let lastActive = null
 
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-
 function onKey(e) {
   if (e.key === 'Escape') {
     emit('close')
     return
   }
-  if (e.key !== 'Tab' || !boxRef.value) return
-
-  // 焦点陷阱：Tab 在弹窗内循环
-  const nodes = Array.from(boxRef.value.querySelectorAll(FOCUSABLE)).filter(
-    (el) => el.offsetParent !== null || el === document.activeElement
-  )
-  if (!nodes.length) return
-
-  const first = nodes[0]
-  const last = nodes[nodes.length - 1]
-  const active = document.activeElement
-
-  if (e.shiftKey && (active === first || active === boxRef.value)) {
-    e.preventDefault()
-    last.focus()
-  } else if (!e.shiftKey && active === last) {
-    e.preventDefault()
-    first.focus()
-  }
+  // 焦点陷阱：Tab 在弹窗内循环（与移动端抽屉共用同一实现）
+  if (e.key === 'Tab') trapTab(boxRef.value, e)
 }
 
 onMounted(async () => {

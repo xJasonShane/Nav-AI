@@ -6,9 +6,33 @@ import { computed, ref, watch } from 'vue'
 import { store, sitesOf, findCategory } from '../store/data.js'
 import { buildGroups } from '../utils/grouping.js'
 
+/** 上次停留的分类（sessionStorage）：刷新后回到原位置，但不进入数据 schema、不影响导出 */
+const LAST_KEY = 'nav-ai-last-category'
+
+function readLastId() {
+  try {
+    const raw = sessionStorage.getItem(LAST_KEY)
+    if (!raw) return null
+    if (raw === 'uncategorized') {
+      return store.sites.some((site) => !site.categoryId) ? 'uncategorized' : null
+    }
+    return findCategory(raw) ? raw : null
+  } catch (e) {
+    return null
+  }
+}
+
 export function useNavView() {
   /** null = 全部 | 'uncategorized' | 分类 id */
-  const selectedId = ref(null)
+  const selectedId = ref(readLastId())
+
+  watch(selectedId, (id) => {
+    try {
+      sessionStorage.setItem(LAST_KEY, id || '')
+    } catch (e) {
+      /* 隐私模式 / 禁用存储时忽略：仅影响「记住上次分类」，不影响主流程 */
+    }
+  })
 
   const groups = computed(() =>
     buildGroups({

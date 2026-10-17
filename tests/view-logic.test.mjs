@@ -8,6 +8,7 @@ import { test } from 'node:test'
 import { filterSites } from '../src/utils/search.js'
 import { buildGroups, flattenCategories } from '../src/utils/grouping.js'
 import { buildSharePage, escapeHtml } from '../src/utils/export-page.js'
+import { isValidHttpUrl } from '../src/utils/url.js'
 
 const SITES = [
   { id: 's1', name: 'GitHub', desc: '代码托管', url: 'https://github.com', categoryId: 'c1' },
@@ -31,6 +32,57 @@ test('filterSites：空查询返回空数组，命中名称/描述/网址，忽�
   assert.deepEqual(filterSites(SITES, '技术').map((s) => s.id), ['s2'])
   assert.deepEqual(filterSites(SITES, 'MOZILLA').map((s) => s.id), ['s3'])
   assert.deepEqual(filterSites(SITES, '不存在'), [])
+})
+
+test('filterSites：相关性排序 + 分类名命中 + 同分保持原顺序', () => {
+  const sites = [
+    { id: 'a', name: '数据结构', desc: '', url: 'https://a.example', categoryId: 'c1' },
+    { id: 'b', name: 'GitHub 教程', desc: '代码托管', url: 'https://b.example', categoryId: 'c2' },
+    { id: 'c', name: '开发工具', desc: 'GitHub 客户端', url: 'https://c.example', categoryId: 'c2' },
+  ]
+  const names = new Map([
+    ['c1', '设计'],
+    ['c2', '工具'],
+  ])
+
+  assert.deepEqual(
+    filterSites(sites, 'git').map((s) => s.id),
+    ['b', 'c'],
+    '名称前缀命中应排在描述命中之前'
+  )
+
+  assert.deepEqual(filterSites(sites, '设计', names).map((s) => s.id), ['a'], '分类名可被搜索命中')
+  assert.deepEqual(
+    filterSites(sites, '工具', names).map((s) => s.id),
+    ['c', 'b'],
+    '名称命中(80)优先于分类名命中(60)'
+  )
+
+  const loose = [{ id: 'u', name: '松散', desc: '', url: 'https://u.example', categoryId: null }]
+  assert.deepEqual(
+    filterSites(loose, '未分类', new Map([[null, '未分类']])).map((s) => s.id),
+    ['u'],
+    '未分类站点可通过 null 映射命中'
+  )
+
+  const sameScore = [
+    { id: 'x', name: '导航', desc: '工具集', url: 'https://x.example', categoryId: null },
+    { id: 'y', name: '导航站', desc: '工具集', url: 'https://y.example', categoryId: null },
+  ]
+  assert.deepEqual(
+    filterSites(sameScore, '工具').map((s) => s.id),
+    ['x', 'y'],
+    '同分时保持数据原顺序'
+  )
+})
+
+test('isValidHttpUrl：只接受带域名或 IP 的 http(s) 地址', () => {
+  assert.equal(isValidHttpUrl('https://example.com'), true)
+  assert.equal(isValidHttpUrl('http://192.168.1.1:8080/path'), true)
+  assert.equal(isValidHttpUrl('https://localhost:3000'), true)
+  assert.equal(isValidHttpUrl('https://foo'), false, '缺少域名后缀的地址应被拒绝')
+  assert.equal(isValidHttpUrl('javascript:alert(1)'), false)
+  assert.equal(isValidHttpUrl(''), false)
 })
 
 test('buildGroups：全部 / 未分类 / 指定分类 / 失效分类', () => {

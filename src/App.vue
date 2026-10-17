@@ -14,6 +14,7 @@ import Toast from './components/Toast.vue'
 import Icon from './components/Icon.vue'
 import {
   store,
+  categoryIndex,
   findCategory,
   removeSite,
   restoreSite,
@@ -24,6 +25,7 @@ import {
   clearStorageNotice,
 } from './store/data.js'
 import { showToast } from './utils/toast.js'
+import { draggingId, resetDrag } from './utils/drag.js'
 import { flattenCategories } from './utils/grouping.js'
 import { useSiteSearch } from './composables/useSiteSearch.js'
 import { useNavView } from './composables/useNavView.js'
@@ -46,7 +48,15 @@ const showSettingsModal = ref(false)
 const pendingSite = ref(null) // 待确认删除的站点
 
 /* ------- 视图逻辑（搜索 / 分组） ------- */
-const search = useSiteSearch(store.sites)
+/** 分类 id → 名称（含 null → 未分类）：供搜索命中分类名与结果卡片标注归属 */
+const categoryNames = computed(() => {
+  const map = new Map()
+  map.set(null, '未分类')
+  for (const [id, hit] of categoryIndex.value) map.set(id, hit.node.name)
+  return map
+})
+
+const search = useSiteSearch(store.sites, categoryNames)
 const nav = useNavView()
 const { query, searching, results: searchResults, activeIndex, activeDescendant } = search
 const { selectedId, groups } = nav
@@ -87,9 +97,23 @@ const selectedTitle = computed(() => {
 function selectCategory(id) {
   nav.select(id)
   search.reset()
+  // 切分类后从顶部开始：否则从长列表底部切到内容较少的分类会停在空白处
+  window.scrollTo(0, 0)
   // 批量模式下切换分类：旧选中项已不可见，必须清空，否则「已选 N 项」与实际不符，
   // 且批量移动/删除会作用到看不见的站点
   if (selected.value.size) selected.value = new Set()
+}
+
+/** 排序模式下拖到分组空白处 = 移动到该分类（空分类因此也能接收拖拽） */
+function onGroupDragOver(e) {
+  if (orderMode.value && draggingId.value) e.preventDefault()
+}
+
+function onGroupDrop(e, categoryId) {
+  if (!orderMode.value || !draggingId.value) return
+  e.preventDefault()
+  moveSitesTo([draggingId.value], categoryId === 'uncat' ? null : categoryId)
+  resetDrag()
 }
 
 /* ------- 批量管理（F6） ------- */
@@ -275,6 +299,7 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
             :active="i === activeIndex"
             :site="s"
             :admin="admin"
+            :category-name="categoryNames.get(s.categoryId || null) || '未分类'"
             @edit="siteModal = { site: s, categoryId: null }"
             @remove="deleteSite(s)"
           />
@@ -344,7 +369,13 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
         </div>
 
         <template v-if="groups.some((g) => g.sites.length || g.children.some((c) => c.sites.length))">
-          <section v-for="g in groups" :key="g.key" class="group">
+          <section
+            v-for="g in groups"
+            :key="g.key"
+            class="group"
+            @dragover="onGroupDragOver"
+            @drop="onGroupDrop($event, g.key)"
+          >
             <template v-if="selectedId === null">
               <h2 class="group-title">
                 <span class="g-icon">{{ g.icon }}</span>{{ g.title }}
@@ -374,7 +405,13 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
               </button>
             </div>
 
-            <div v-for="child in g.children" :key="child.key" class="sub-group">
+            <div
+              v-for="child in g.children"
+              :key="child.key"
+              class="sub-group"
+              @dragover="onGroupDragOver"
+              @drop="onGroupDrop($event, child.key)"
+            >
               <h3 v-if="child.sites.length" class="sub-title">
                 <span class="g-icon">{{ child.icon }}</span>{{ child.title }}
                 <span class="badge">{{ child.sites.length }}</span>
@@ -582,6 +619,9 @@ const isEmpty = computed(() => !searching.value && totalSites.value === 0)
 
 .group {
   margin-bottom: var(--sp-8);
+  /* 长列表优化：离屏分组跳过布局与绘制；auto 让浏览器记住上次渲染高度，避免滚动条跳动 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
 }
 
 .group-title,

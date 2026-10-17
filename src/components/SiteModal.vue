@@ -4,6 +4,7 @@ import Modal from './Modal.vue'
 import Icon from './Icon.vue'
 import { addSite, updateSite, store, findCategory, importSites } from '../store/data.js'
 import { parseSiteLines } from '../utils/importers.js'
+import { isValidHttpUrl } from '../utils/url.js'
 import { flattenCategories } from '../utils/grouping.js'
 import { showToast } from '../utils/toast.js'
 
@@ -48,17 +49,19 @@ const options = computed(() =>
 )
 
 function submit() {
-  error.name = form.name.trim() ? '' : '请输入站点名称'
-  if (!form.url.trim()) error.url = '请输入站点网址'
-  else error.url = ''
+  const name = form.name.trim()
+  const raw = form.url.trim()
+  const url = raw && !/^https?:\/\//i.test(raw) ? `https://${raw}` : raw
 
-  let url = form.url.trim()
-  if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url
+  error.name = name ? '' : '请输入站点名称'
+  if (!url) error.url = '请输入站点网址'
+  else if (!isValidHttpUrl(url)) error.url = '请输入有效的网址（如 https://example.com）'
+  else error.url = ''
 
   if (error.name || error.url) return
 
   const payload = {
-    name: form.name.trim(),
+    name,
     url,
     desc: form.desc.trim(),
     icon: form.icon.trim(),
@@ -135,6 +138,7 @@ function submitBulk() {
             :aria-invalid="error.name ? 'true' : undefined"
             :aria-describedby="error.name ? 'site-name-err' : undefined"
             data-autofocus
+            @input="error.name = ''"
           />
           <span v-if="error.name" id="site-name-err" class="err">
             <Icon name="warn" :size="12" />
@@ -153,6 +157,7 @@ function submitBulk() {
             :class="{ invalid: error.url }"
             :aria-invalid="error.url ? 'true' : undefined"
             :aria-describedby="error.url ? 'site-url-err' : undefined"
+            @input="error.url = ''"
           />
           <span v-if="error.url" id="site-url-err" class="err">
             <Icon name="warn" :size="12" />
